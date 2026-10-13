@@ -1,0 +1,40 @@
+# AWS & Credentials
+.env
+.env.local
+*.pem
+*.key
+credentials
+config.json
+kubeconfig_*
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Load Testing & Experiment Results (k6)
+results/raw/
+*.csv
+*.json
+*.log
+!results/README.md
+
+# IDEs & Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Specific
+.DS_Store
+Thumbs.db
+ehthumbs.db
