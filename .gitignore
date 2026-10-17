@@ -33,8 +33,19 @@ results/raw/
 *.swp
 *.swo
 *~
+.kiro/
 
 # OS Specific
 .DS_Store
 Thumbs.db
 ehthumbs.db
+
+# Terraform sensitive values
+terraform/terraform.tfvars
+terraform/**/.terraform/
+terraform/**/*.tfstate
+terraform/**/*.tfstate.backup
+terraform/**/.terraform.lock.hcl
+
+# Documentation
+PROJECT.md
