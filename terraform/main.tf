@@ -9,3 +9,13 @@ module "networking" {
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
 }
+
+# 2. ECR Repositories
+module "ecr" {
+  source = "./modules/ecr"
+
+  name_prefix    = local.name_prefix
+  environment    = var.environment
+  ecr_repo_names = var.ecr_repo_names
+  tags           = local.common_tags
+}

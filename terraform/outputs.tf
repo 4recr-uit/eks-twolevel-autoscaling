@@ -43,3 +43,14 @@ output "vpc_endpoint_s3_id" {
   description = "ID of the S3 VPC Gateway Endpoint"
   value       = module.networking.vpc_endpoint_s3_id
 }
+
+# ── ECR ───────────────────────────────────────
+output "ecr_repository_urls" {
+  description = "Map of service names to ECR repository URLs"
+  value       = module.ecr.repository_urls
+}
+
+output "ecr_repository_arns" {
+  description = "Map of service names to ECR repository ARNs"
+  value       = module.ecr.repository_arns
+}
