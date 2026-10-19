@@ -49,3 +49,16 @@ module "eks" {
   tags                    = local.common_tags
 }
 
+# 5. IAM Roles for Application Pods (Producer, Worker, KEDA) via Pod Identity
+module "iam" {
+  source = "./modules/iam"
+
+  name_prefix    = local.name_prefix
+  cluster_name   = module.eks.cluster_name
+  queue_arns     = module.sqs.queue_arns
+  dlq_arns       = module.sqs.dlq_arns
+  ecr_repo_arns  = module.ecr.repository_arns
+  app_namespace  = local.namespaces.retailstore
+  keda_namespace = local.namespaces.keda
+  tags           = local.common_tags
+}

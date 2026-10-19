@@ -122,3 +122,23 @@ output "eks_node_role_name" {
   value       = module.eks.node_role_name
 }
 
+# ── IAM ───────────────────────────────────────
+output "iam_producer_role_arn" {
+  description = "ARN of the IAM Role for producer-api pods (Pod Identity)"
+  value       = module.iam.producer_role_arn
+}
+
+output "iam_worker_role_arn" {
+  description = "ARN of the IAM Role for worker pods (Pod Identity)"
+  value       = module.iam.worker_role_arn
+}
+
+output "iam_keda_role_arn" {
+  description = "ARN of the IAM Role for KEDA operator (Pod Identity)"
+  value       = module.iam.keda_role_arn
+}
+
+output "iam_ecr_push_role_arn" {
+  description = "ARN of the IAM Role for CI/CD ECR push (empty string if disabled)"
+  value       = module.iam.ecr_push_role_arn
+}
