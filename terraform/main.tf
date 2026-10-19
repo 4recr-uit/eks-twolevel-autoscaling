@@ -31,3 +31,21 @@ module "sqs" {
   sqs_message_retention  = var.sqs_message_retention
   tags                   = local.common_tags
 }
+
+# 4. EKS Cluster (Control Plane, Seed Managed Node Group, Pod Identity Agent)
+module "eks" {
+  source = "./modules/eks"
+
+  name_prefix             = local.name_prefix
+  cluster_name            = local.cluster_name
+  cluster_version         = var.cluster_version
+  vpc_id                  = module.networking.vpc_id
+  public_subnet_ids       = module.networking.public_subnet_ids
+  private_subnet_ids      = module.networking.private_subnet_ids
+  node_instance_types     = var.node_instance_types
+  node_group_min_size     = var.node_group_min_size
+  node_group_max_size     = var.node_group_max_size
+  node_group_desired_size = var.node_group_desired_size
+  tags                    = local.common_tags
+}
+

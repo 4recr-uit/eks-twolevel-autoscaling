@@ -70,3 +70,55 @@ output "sqs_dlq_urls" {
   description = "Map of queue names to Dead Letter Queue URLs"
   value       = module.sqs.dlq_urls
 }
+
+# ── EKS ───────────────────────────────────────
+output "eks_cluster_id" {
+  description = "ID of the EKS Cluster"
+  value       = module.eks.cluster_id
+}
+
+output "eks_cluster_name" {
+  description = "Name of the EKS Cluster"
+  value       = module.eks.cluster_name
+}
+
+output "eks_cluster_endpoint" {
+  description = "Endpoint for EKS control plane API server"
+  value       = module.eks.cluster_endpoint
+}
+
+output "eks_cluster_certificate_authority_data" {
+  description = "Base64 encoded certificate data required to communicate with the cluster"
+  value       = module.eks.cluster_certificate_authority_data
+}
+
+output "eks_cluster_primary_security_group_id" {
+  description = "Cluster security group managed automatically by EKS"
+  value       = module.eks.cluster_primary_security_group_id
+}
+
+output "eks_node_security_group_id" {
+  description = "Security group ID shared by worker nodes (tagged for Karpenter discovery)"
+  value       = module.eks.node_security_group_id
+}
+
+output "eks_oidc_provider_arn" {
+  description = "ARN of the IAM OIDC Provider for the cluster"
+  value       = module.eks.oidc_provider_arn
+}
+
+output "eks_oidc_issuer_url" {
+  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
+  value       = module.eks.oidc_issuer_url
+}
+
+output "eks_node_role_arn" {
+  description = "ARN of the IAM role used by worker nodes (for Karpenter EC2NodeClass)"
+  value       = module.eks.node_role_arn
+}
+
+output "eks_node_role_name" {
+  description = "Name of the IAM role used by worker nodes"
+  value       = module.eks.node_role_name
+}
+
