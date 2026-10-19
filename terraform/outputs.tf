@@ -54,3 +54,19 @@ output "ecr_repository_arns" {
   description = "Map of service names to ECR repository ARNs"
   value       = module.ecr.repository_arns
 }
+
+# ── SQS ───────────────────────────────────────
+output "sqs_queue_urls" {
+  description = "Map of queue names to SQS queue URLs (consumed by Producer API and KEDA ScaledObject)"
+  value       = module.sqs.queue_urls
+}
+
+output "sqs_queue_arns" {
+  description = "Map of queue names to SQS queue ARNs (consumed by IAM module for IRSA policies)"
+  value       = module.sqs.queue_arns
+}
+
+output "sqs_dlq_urls" {
+  description = "Map of queue names to Dead Letter Queue URLs"
+  value       = module.sqs.dlq_urls
+}
