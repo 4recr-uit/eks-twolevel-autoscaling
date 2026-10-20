@@ -28,6 +28,21 @@ output "private_subnet_cidrs" {
   value       = aws_subnet.private[*].cidr_block
 }
 
+output "database_subnet_ids" {
+  description = "IDs of the isolated RDS private subnets across availability zones"
+  value       = aws_subnet.database[*].id
+}
+
+output "database_subnet_cidrs" {
+  description = "CIDR blocks of the isolated RDS private subnets"
+  value       = aws_subnet.database[*].cidr_block
+}
+
+output "database_route_table_id" {
+  description = "ID of the RDS subnet route table with only VPC-local routing"
+  value       = aws_route_table.database.id
+}
+
 output "nat_gateway_id" {
   description = "ID of the NAT Gateway"
   value       = aws_nat_gateway.this.id

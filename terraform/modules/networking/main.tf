@@ -35,15 +35,32 @@ resource "aws_subnet" "public" {
 resource "aws_subnet" "private" {
   count = length(var.private_subnet_cidrs)
 
-  vpc_id            = aws_vpc.this.id
-  cidr_block        = var.private_subnet_cidrs[count.index]
-  availability_zone = var.availability_zones[count.index]
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = var.private_subnet_cidrs[count.index]
+  availability_zone       = var.availability_zones[count.index]
+  map_public_ip_on_launch = false
 
   tags = {
     Name                                        = "${var.name_prefix}-private-${var.availability_zones[count.index]}"
     "kubernetes.io/role/internal-elb"           = "1"
     "kubernetes.io/cluster/${var.cluster_name}" = "shared"
     "karpenter.sh/discovery"                    = var.cluster_name
+  }
+}
+
+# RDS subnets use a dedicated route table with only the implicit VPC local route.
+# They have no public IP assignment and no Kubernetes/Karpenter discovery tags.
+resource "aws_subnet" "database" {
+  count = length(var.database_subnet_cidrs)
+
+  vpc_id                  = aws_vpc.this.id
+  cidr_block              = var.database_subnet_cidrs[count.index]
+  availability_zone       = var.availability_zones[count.index]
+  map_public_ip_on_launch = false
+
+  tags = {
+    Name = "${var.name_prefix}-database-${var.availability_zones[count.index]}"
+    Tier = "database"
   }
 }
 
@@ -104,6 +121,22 @@ resource "aws_route_table_association" "private" {
   count          = length(var.private_subnet_cidrs)
   subnet_id      = aws_subnet.private[count.index].id
   route_table_id = aws_route_table.private.id
+}
+
+resource "aws_route_table" "database" {
+  vpc_id = aws_vpc.this.id
+
+  # The AWS-created local route is sufficient for EKS-to-RDS traffic.
+  # No route to the internet gateway or NAT gateway is configured.
+  tags = {
+    Name = "${var.name_prefix}-rt-database"
+  }
+}
+
+resource "aws_route_table_association" "database" {
+  count          = length(var.database_subnet_cidrs)
+  subnet_id      = aws_subnet.database[count.index].id
+  route_table_id = aws_route_table.database.id
 }
 
 # Free S3 Gateway Endpoint to optimize AWS S3 / ECR layer downloads
