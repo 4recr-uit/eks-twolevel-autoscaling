@@ -12,7 +12,7 @@ variable "cluster_name" {
 
 # ── Kubernetes Namespaces & Service Accounts ──────────────
 variable "app_namespace" {
-  description = "Kubernetes namespace where producer and worker pods run"
+  description = "Kubernetes namespace where outbox publisher and worker pods run"
   type        = string
   default     = "retailstore"
 }
@@ -21,18 +21,6 @@ variable "keda_namespace" {
   description = "Kubernetes namespace where KEDA operator runs"
   type        = string
   default     = "keda"
-}
-
-variable "producer_service_account" {
-  description = "Kubernetes Service Account name for the producer-api pod"
-  type        = string
-  default     = "producer-api"
-}
-
-variable "worker_service_account" {
-  description = "Kubernetes Service Account name for the worker pod"
-  type        = string
-  default     = "worker"
 }
 
 variable "keda_service_account" {
@@ -45,12 +33,6 @@ variable "keda_service_account" {
 variable "queue_arns" {
   description = "Map of queue logical names to their SQS queue ARNs (from module sqs)"
   type        = map(string)
-}
-
-variable "dlq_arns" {
-  description = "Map of queue logical names to their Dead Letter Queue ARNs (from module sqs)"
-  type        = map(string)
-  default     = {}
 }
 
 # ── ECR Repository ARNs (from module "ecr") ──────────────

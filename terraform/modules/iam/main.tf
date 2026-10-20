@@ -1,15 +1,17 @@
 locals {
-  # Flatten all SQS ARNs (main queues + DLQs) into a single list
-  # used by the worker policy — worker needs access to both
-  all_sqs_arns = concat(
-    values(var.queue_arns),
-    values(var.dlq_arns)
-  )
+  # The logical queue keys are stable; the ARNs are provided by the SQS module.
+  # Each outbox publisher and worker gets its own ServiceAccount and IAM role.
+  publisher_service_accounts = {
+    for queue_name in keys(var.queue_arns) : queue_name => "${trimsuffix(queue_name, "-queue")}-publisher"
+  }
+  worker_service_accounts = {
+    for queue_name in keys(var.queue_arns) : queue_name => "${trimsuffix(queue_name, "-queue")}-worker"
+  }
 
   # All ECR repository ARNs as a list for policy statements
   ecr_repo_arns_list = values(var.ecr_repo_arns)
 
-  # Shared trust policy for EKS Pod Identity (same for producer, worker, keda)
+  # Shared trust policy for EKS Pod Identity (publishers, workers, KEDA)
   pod_identity_trust_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -25,77 +27,86 @@ locals {
   })
 }
 
-# 1. PRODUCER-API — SQS SendMessage
+# 1. OUTBOX PUBLISHERS — one Pod Identity role per main queue
 
-resource "aws_iam_role" "producer" {
-  name               = "${var.name_prefix}-producer-role"
-  description        = "EKS Pod Identity role for the producer-api service. Grants SQS SendMessage on all worker queues."
+resource "aws_iam_role" "publisher" {
+  for_each = var.queue_arns
+
+  name               = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-publisher-role"
+  description        = "Pod Identity role for ${each.key} outbox publisher"
   assume_role_policy = local.pod_identity_trust_policy
 
   tags = merge(var.tags, {
-    Name    = "${var.name_prefix}-producer-role"
-    PodRole = "producer-api"
+    Name    = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-publisher-role"
+    PodRole = local.publisher_service_accounts[each.key]
   })
 }
 
-data "aws_iam_policy_document" "producer_sqs" {
+data "aws_iam_policy_document" "publisher_sqs" {
+  for_each = var.queue_arns
+
   statement {
-    sid    = "ProducerSQSSend"
-    effect = "Allow"
-    actions = [
-      "sqs:SendMessage",
-      "sqs:GetQueueAttributes",
-      "sqs:GetQueueUrl",
-    ]
-    # Scope to main queues only — producer never touches DLQs
-    resources = values(var.queue_arns)
+    sid       = "PublishToOwnQueue"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [each.value]
   }
 }
 
-resource "aws_iam_policy" "producer_sqs" {
-  name        = "${var.name_prefix}-producer-sqs-policy"
-  description = "Allows producer-api to send messages to SQS worker queues"
-  policy      = data.aws_iam_policy_document.producer_sqs.json
+resource "aws_iam_policy" "publisher_sqs" {
+  for_each = var.queue_arns
+
+  name        = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-publisher-sqs"
+  description = "Allows ${each.key} publisher to send only to its main queue"
+  policy      = data.aws_iam_policy_document.publisher_sqs[each.key].json
 
   tags = merge(var.tags, {
-    Name    = "${var.name_prefix}-producer-sqs-policy"
-    PodRole = "producer-api"
+    Name    = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-publisher-sqs"
+    PodRole = local.publisher_service_accounts[each.key]
   })
 }
 
-resource "aws_iam_role_policy_attachment" "producer_sqs" {
-  role       = aws_iam_role.producer.name
-  policy_arn = aws_iam_policy.producer_sqs.arn
+resource "aws_iam_role_policy_attachment" "publisher_sqs" {
+  for_each = var.queue_arns
+
+  role       = aws_iam_role.publisher[each.key].name
+  policy_arn = aws_iam_policy.publisher_sqs[each.key].arn
 }
 
-# Pod Identity Association: maps producer-api ServiceAccount → IAM Role
-resource "aws_eks_pod_identity_association" "producer" {
+# Each association may be created before its Kubernetes ServiceAccount exists.
+resource "aws_eks_pod_identity_association" "publisher" {
+  for_each = var.queue_arns
+
   cluster_name    = var.cluster_name
   namespace       = var.app_namespace
-  service_account = var.producer_service_account
-  role_arn        = aws_iam_role.producer.arn
+  service_account = local.publisher_service_accounts[each.key]
+  role_arn        = aws_iam_role.publisher[each.key].arn
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-producer-pod-identity"
+    Name = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-publisher-pod-identity"
   })
 }
 
-# 2. WORKER — SQS ReceiveMessage, DeleteMessage, ChangeMessageVisibility
+# 2. WORKERS — one Pod Identity role per main queue, no DLQ access
 
 resource "aws_iam_role" "worker" {
-  name               = "${var.name_prefix}-worker-role"
-  description        = "EKS Pod Identity role for the worker service. Grants SQS receive, delete, and visibility timeout changes on worker queues and DLQs."
+  for_each = var.queue_arns
+
+  name               = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-worker-role"
+  description        = "Pod Identity role for ${each.key} worker"
   assume_role_policy = local.pod_identity_trust_policy
 
   tags = merge(var.tags, {
-    Name    = "${var.name_prefix}-worker-role"
-    PodRole = "worker"
+    Name    = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-worker-role"
+    PodRole = local.worker_service_accounts[each.key]
   })
 }
 
 data "aws_iam_policy_document" "worker_sqs" {
+  for_each = var.queue_arns
+
   statement {
-    sid    = "WorkerSQSConsume"
+    sid    = "ConsumeOwnQueue"
     effect = "Allow"
     actions = [
       "sqs:ReceiveMessage",
@@ -104,37 +115,40 @@ data "aws_iam_policy_document" "worker_sqs" {
       "sqs:GetQueueAttributes",
       "sqs:GetQueueUrl",
     ]
-    # Worker has access to both main queues and DLQs
-    # (DLQ access allows manual inspection and re-drive during debugging)
-    resources = local.all_sqs_arns
+    resources = [each.value]
   }
 }
 
 resource "aws_iam_policy" "worker_sqs" {
-  name        = "${var.name_prefix}-worker-sqs-policy"
-  description = "Allows worker pods to consume, delete, and manage message visibility in SQS queues and DLQs"
-  policy      = data.aws_iam_policy_document.worker_sqs.json
+  for_each = var.queue_arns
+
+  name        = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-worker-sqs"
+  description = "Allows ${each.key} worker to consume only its main queue"
+  policy      = data.aws_iam_policy_document.worker_sqs[each.key].json
 
   tags = merge(var.tags, {
-    Name    = "${var.name_prefix}-worker-sqs-policy"
-    PodRole = "worker"
+    Name    = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-worker-sqs"
+    PodRole = local.worker_service_accounts[each.key]
   })
 }
 
 resource "aws_iam_role_policy_attachment" "worker_sqs" {
-  role       = aws_iam_role.worker.name
-  policy_arn = aws_iam_policy.worker_sqs.arn
+  for_each = var.queue_arns
+
+  role       = aws_iam_role.worker[each.key].name
+  policy_arn = aws_iam_policy.worker_sqs[each.key].arn
 }
 
-# Pod Identity Association: maps worker ServiceAccount → IAM Role
 resource "aws_eks_pod_identity_association" "worker" {
+  for_each = var.queue_arns
+
   cluster_name    = var.cluster_name
   namespace       = var.app_namespace
-  service_account = var.worker_service_account
-  role_arn        = aws_iam_role.worker.arn
+  service_account = local.worker_service_accounts[each.key]
+  role_arn        = aws_iam_role.worker[each.key].arn
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-worker-pod-identity"
+    Name = "${var.name_prefix}-${trimsuffix(each.key, "-queue")}-worker-pod-identity"
   })
 }
 
