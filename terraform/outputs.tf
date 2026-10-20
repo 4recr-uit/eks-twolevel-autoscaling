@@ -1,4 +1,9 @@
 # ── Networking ────────────────────────────────
+output "monthly_budget_name" {
+  description = "Name of the AWS monthly cost budget"
+  value       = aws_budgets_budget.monthly_cost.name
+}
+
 output "vpc_id" {
   description = "ID of the main VPC"
   value       = module.networking.vpc_id
@@ -29,6 +34,51 @@ output "private_subnet_cidrs" {
   value       = module.networking.private_subnet_cidrs
 }
 
+output "database_subnet_ids" {
+  description = "IDs of isolated RDS subnets in at least two availability zones"
+  value       = module.networking.database_subnet_ids
+}
+
+output "database_subnet_cidrs" {
+  description = "CIDR blocks of isolated RDS subnets"
+  value       = module.networking.database_subnet_cidrs
+}
+
+output "database_route_table_id" {
+  description = "Route table used by RDS subnets, without internet or NAT default route"
+  value       = module.networking.database_route_table_id
+}
+
+output "postgres_endpoint" {
+  description = "Private PostgreSQL hostname for retaildb (port 5432)"
+  value       = module.databases.postgres_endpoint
+}
+
+output "mysql_endpoint" {
+  description = "Private MySQL hostname for catalogdb (port 3306)"
+  value       = module.databases.mysql_endpoint
+}
+
+output "postgres_master_secret_arn" {
+  description = "RDS-managed bootstrap credential secret for PostgreSQL; do not use directly in app pods"
+  value       = module.databases.postgres_master_secret_arn
+}
+
+output "mysql_master_secret_arn" {
+  description = "RDS-managed bootstrap credential secret for MySQL; do not use directly in app pods"
+  value       = module.databases.mysql_master_secret_arn
+}
+
+output "postgres_security_group_id" {
+  description = "PostgreSQL SG: TCP 5432 from shared EKS node SG"
+  value       = module.databases.postgres_security_group_id
+}
+
+output "mysql_security_group_id" {
+  description = "MySQL SG: TCP 3306 from shared EKS node SG"
+  value       = module.databases.mysql_security_group_id
+}
+
 output "nat_gateway_id" {
   description = "ID of the NAT Gateway"
   value       = module.networking.nat_gateway_id
@@ -57,12 +107,12 @@ output "ecr_repository_arns" {
 
 # ── SQS ───────────────────────────────────────
 output "sqs_queue_urls" {
-  description = "Map of queue names to SQS queue URLs (consumed by Producer API and KEDA ScaledObject)"
+  description = "Map of queue names to SQS queue URLs (consumed by outbox publishers, workers, and KEDA)"
   value       = module.sqs.queue_urls
 }
 
 output "sqs_queue_arns" {
-  description = "Map of queue names to SQS queue ARNs (consumed by IAM module for IRSA policies)"
+  description = "Map of queue names to SQS queue ARNs (consumed by IAM policies for Pod Identity roles)"
   value       = module.sqs.queue_arns
 }
 
@@ -98,39 +148,39 @@ output "eks_cluster_primary_security_group_id" {
 }
 
 output "eks_node_security_group_id" {
-  description = "Security group ID shared by worker nodes (tagged for Karpenter discovery)"
+  description = "Security group attached to seed and Karpenter nodes; use as future RDS ingress source"
   value       = module.eks.node_security_group_id
 }
 
-output "eks_oidc_provider_arn" {
-  description = "ARN of the IAM OIDC Provider for the cluster"
-  value       = module.eks.oidc_provider_arn
-}
-
-output "eks_oidc_issuer_url" {
-  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
-  value       = module.eks.oidc_issuer_url
-}
-
 output "eks_node_role_arn" {
-  description = "ARN of the IAM role used by worker nodes (for Karpenter EC2NodeClass)"
+  description = "ARN of the IAM role used by the seed EKS Managed Node Group"
   value       = module.eks.node_role_arn
 }
 
 output "eks_node_role_name" {
-  description = "Name of the IAM role used by worker nodes"
+  description = "Name of the IAM role used by the seed EKS Managed Node Group"
   value       = module.eks.node_role_name
 }
 
 # ── IAM ───────────────────────────────────────
-output "iam_producer_role_arn" {
-  description = "ARN of the IAM Role for producer-api pods (Pod Identity)"
-  value       = module.iam.producer_role_arn
+output "iam_publisher_role_arns" {
+  description = "Pod Identity IAM role ARNs for outbox publishers, keyed by main queue"
+  value       = module.iam.publisher_role_arns
 }
 
-output "iam_worker_role_arn" {
-  description = "ARN of the IAM Role for worker pods (Pod Identity)"
-  value       = module.iam.worker_role_arn
+output "iam_publisher_service_accounts" {
+  description = "Outbox publisher ServiceAccount names, keyed by main queue"
+  value       = module.iam.publisher_service_accounts
+}
+
+output "iam_worker_role_arns" {
+  description = "Pod Identity IAM role ARNs for workers, keyed by main queue"
+  value       = module.iam.worker_role_arns
+}
+
+output "iam_worker_service_accounts" {
+  description = "Worker ServiceAccount names, keyed by main queue"
+  value       = module.iam.worker_service_accounts
 }
 
 output "iam_keda_role_arn" {
@@ -138,7 +188,68 @@ output "iam_keda_role_arn" {
   value       = module.iam.keda_role_arn
 }
 
+output "keda_cluster_trigger_authentication_name" {
+  description = "ClusterTriggerAuthentication used by all three SQS worker scalers"
+  value       = var.enable_cluster_addons ? module.keda[0].cluster_trigger_authentication_name : null
+}
+
+output "keda_scaled_object_names" {
+  description = "ScaledObjects created for worker Deployments, keyed by queue name"
+  value       = var.enable_cluster_addons ? module.keda[0].scaled_object_names : {}
+}
+
+output "monitoring_release_name" {
+  description = "Monitoring release name, or null when disabled"
+  value       = var.enable_observability ? module.observability[0].release_name : null
+}
+
+output "grafana_service_name" {
+  description = "Internal Grafana service name, or null when disabled"
+  value       = var.enable_observability ? module.observability[0].grafana_service_name : null
+}
+
 output "iam_ecr_push_role_arn" {
   description = "ARN of the IAM Role for CI/CD ECR push (empty string if disabled)"
   value       = module.iam.ecr_push_role_arn
+}
+
+# ── Karpenter ─────────────────────────────────
+output "karpenter_controller_role_arn" {
+  description = "ARN of the IAM Role used by the Karpenter controller"
+  value       = var.enable_cluster_addons ? module.karpenter[0].controller_role_arn : null
+}
+
+output "karpenter_node_role_arn" {
+  description = "ARN of the dedicated IAM role used by Karpenter-managed EC2 nodes"
+  value       = var.enable_cluster_addons ? module.karpenter[0].node_role_arn : null
+}
+
+output "karpenter_node_role_name" {
+  description = "Name of the dedicated IAM role referenced by Karpenter EC2NodeClass"
+  value       = var.enable_cluster_addons ? module.karpenter[0].node_role_name : null
+}
+
+output "karpenter_node_access_entry_arn" {
+  description = "ARN of the EC2_LINUX access entry for Karpenter-managed nodes"
+  value       = var.enable_cluster_addons ? module.karpenter[0].node_access_entry_arn : null
+}
+
+output "karpenter_interruption_queue_arn" {
+  description = "ARN of the SQS interruption queue used by Karpenter"
+  value       = var.enable_cluster_addons ? module.karpenter[0].interruption_queue_arn : null
+}
+
+output "karpenter_interruption_queue_name" {
+  description = "Name of the SQS interruption queue"
+  value       = var.enable_cluster_addons ? module.karpenter[0].interruption_queue_name : null
+}
+
+output "karpenter_node_pool_name" {
+  description = "Name of the provisioned NodePool custom resource"
+  value       = var.enable_cluster_addons ? module.karpenter[0].node_pool_name : null
+}
+
+output "karpenter_node_class_name" {
+  description = "Name of the provisioned EC2NodeClass custom resource"
+  value       = var.enable_cluster_addons ? module.karpenter[0].node_class_name : null
 }
