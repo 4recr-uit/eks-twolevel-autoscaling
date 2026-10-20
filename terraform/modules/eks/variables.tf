@@ -13,11 +13,11 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "1.32"
+  default     = "1.36"
 
   validation {
     condition     = can(regex("^1\\.[0-9]+$", var.cluster_version))
-    error_message = "cluster_version must be in standard Kubernetes format (e.g. '1.32')."
+    error_message = "cluster_version must be in standard Kubernetes format (e.g. '1.36')."
   }
 }
 
@@ -37,11 +37,21 @@ variable "private_subnet_ids" {
   type        = list(string)
 }
 
+variable "public_access_cidrs" {
+  description = "Public IPv4 CIDRs allowed to administer the EKS Kubernetes API"
+  type        = list(string)
+
+  validation {
+    condition     = length(var.public_access_cidrs) > 0 && alltrue([for cidr in var.public_access_cidrs : can(cidrhost(cidr, 0)) && cidr != "0.0.0.0/0"])
+    error_message = "Set at least one valid administrator CIDR and do not use 0.0.0.0/0."
+  }
+}
+
 # ── Seed Managed Node Group ───────────────────
 variable "node_instance_types" {
   description = "EC2 instance types for the seed managed node group (system workloads)"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.small"]
 }
 
 variable "node_group_capacity_type" {
