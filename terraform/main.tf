@@ -119,7 +119,7 @@ module "keda" {
   cooldown_period       = var.keda_cooldown_period
 
   worker_deployments = {
-    "cart-queue"     = "cart-worker"
+    "cart-queue"     = "carts-worker"
     "checkout-queue" = "checkout-worker"
     "orders-queue"   = "orders-worker"
   }

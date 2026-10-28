@@ -15,7 +15,7 @@ Namespace ứng dụng: `retailstore`.
 
 | Service | Queue | API ServiceAccount | Worker ServiceAccount | Worker Deployment dự kiến | Database |
 |---|---|---|---|---|---|
-| Cart | cart-queue | cart-api | cart-worker | cart-worker | PostgreSQL: retaildb, schema cart |
+| Cart | cart-queue | cart-api | cart-worker | carts-worker | PostgreSQL: retaildb, schema cart |
 | Orders | orders-queue | orders-api | orders-worker | orders-worker | PostgreSQL: retaildb, schema orders |
 | Checkout | checkout-queue | checkout-api | checkout-worker | checkout-worker | PostgreSQL: retaildb, schema checkout |
 | Catalog | Không có | Theo chart | Không có | Không có | MySQL: catalogdb |
@@ -55,8 +55,8 @@ User ứng dụng và quyền database cần được chuẩn bị riêng.
 
 ## 6. Các điểm cần hoàn thiện
 
-- Chart tổng hiện có thể render worker Cart là `carts-worker`,
-  trong khi Terraform KEDA yêu cầu `cart-worker`; cần thống nhất.
+- Chart tổng và Terraform dùng tên Cart Deployment `carts-worker`;
+  khi cài chart Cart riêng, đặt `fullnameOverride=carts` để giữ đúng tên.
 - Tắt ScaledObject trong backend chart khi Terraform quản lý.
 - Sửa chart để tham chiếu Kubernetes Secret có sẵn.
 - Thay values mặc định bằng cấu hình EKS: image, queue URL,

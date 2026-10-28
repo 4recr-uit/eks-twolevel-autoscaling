@@ -34,7 +34,7 @@ kubectl get pods -n keda
 kubectl get clustertriggerauthentication
 ```
 
-Các Pod phải `Running`; `EC2NodeClass` và `NodePool` phải `Ready`. Karpenter chỉ tạo thêm EC2 node khi có Pod cần tài nguyên. Sau khi đã triển khai ba worker Deployment (`cart-worker`, `orders-worker`, `checkout-worker`) trong namespace `retailstore`, mới đặt `enable_keda_scaled_objects = true` và apply tiếp; kiểm tra bằng `kubectl get scaledobjects -n retailstore`.
+Các Pod phải `Running`; `EC2NodeClass` và `NodePool` phải `Ready`. Karpenter chỉ tạo thêm EC2 node khi có Pod cần tài nguyên. Sau khi đã triển khai ba worker Deployment (`carts-worker`, `orders-worker`, `checkout-worker`) trong namespace `retailstore`, mới đặt `enable_keda_scaled_objects = true` và apply tiếp; kiểm tra bằng `kubectl get scaledobjects -n retailstore`. Chart tổng đặt fullname Cart là `carts`; nếu cài chart Cart riêng, đặt `fullnameOverride=carts` để tên Deployment khớp.
 
 Monitoring là tùy chọn: tạo trước Secret `grafana-admin` trong namespace `monitoring` với hai khóa `admin-user`, `admin-password`, sau đó đặt `enable_observability = true` và apply. Dashboard chỉ truy cập nội bộ qua `kubectl port-forward`.
 
