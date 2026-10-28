@@ -298,5 +298,5 @@ variable "sqs_message_retention" {
 variable "ecr_repo_names" {
   description = "List of ECR repository names for backend microservices"
   type        = list(string)
-  default     = ["catalog", "cart", "orders", "checkout", "recommendations"]
+  default     = ["catalog", "cart", "orders", "checkout", "recommendations", "root"]
 }

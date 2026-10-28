@@ -60,4 +60,4 @@ sqs_visibility_timeout = 60
 sqs_message_retention  = 345600
 
 # ── ECR ───────────────────────────────────────
-ecr_repo_names = ["catalog", "cart", "orders", "checkout", "recommendations"]
+ecr_repo_names = ["catalog", "cart", "orders", "checkout", "recommendations", "ui"]
