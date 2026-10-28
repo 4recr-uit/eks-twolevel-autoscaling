@@ -1,6 +1,6 @@
 # ── Main Queue Outputs ────────────────────────────────────────────────────────
 output "queue_urls" {
-  description = "Map of queue logical names to SQS queue URLs (used by publishers, workers, and KEDA)"
+  description = "Map of queue logical names to SQS queue URLs (used by API producers, workers, and KEDA)"
   value       = { for k, v in aws_sqs_queue.this : k => v.url }
 }
 

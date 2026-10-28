@@ -107,7 +107,7 @@ output "ecr_repository_arns" {
 
 # ── SQS ───────────────────────────────────────
 output "sqs_queue_urls" {
-  description = "Map of queue names to SQS queue URLs (consumed by outbox publishers, workers, and KEDA)"
+  description = "Map of queue names to SQS queue URLs (consumed by API producers, workers, and KEDA)"
   value       = module.sqs.queue_urls
 }
 
@@ -164,12 +164,12 @@ output "eks_node_role_name" {
 
 # ── IAM ───────────────────────────────────────
 output "iam_publisher_role_arns" {
-  description = "Pod Identity IAM role ARNs for outbox publishers, keyed by main queue"
+  description = "Pod Identity IAM role ARNs for API producers, keyed by main queue"
   value       = module.iam.publisher_role_arns
 }
 
 output "iam_publisher_service_accounts" {
-  description = "Outbox publisher ServiceAccount names, keyed by main queue"
+  description = "API producer ServiceAccount names, keyed by main queue"
   value       = module.iam.publisher_service_accounts
 }
 

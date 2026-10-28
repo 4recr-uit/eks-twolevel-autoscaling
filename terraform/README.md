@@ -45,7 +45,7 @@ Monitoring là tùy chọn: tạo trước Secret `grafana-admin` trong namespac
 | Dịch vụ / đường dẫn | Kết quả mong đợi |
 | --- | --- |
 | **VPC → Your VPCs / Subnets / Route tables** | VPC `twolevel-autoscaling-dev-vpc`; 2 public, 2 private cho EKS và 2 database subnet. Route table database chỉ có route nội bộ VPC. |
-| **EKS → Clusters → twolevel-autoscaling-dev** | Cluster `Active`; trong **Compute**, managed node group `Active`. Trong **Access → Pod Identity**, có các association cho publisher, worker và KEDA; sau lượt 2 có thêm Karpenter. |
+| **EKS → Clusters → twolevel-autoscaling-dev** | Cluster `Active`; trong **Compute**, managed node group `Active`. Trong **Access → Pod Identity**, có các association cho API producer, worker và KEDA; sau lượt 2 có thêm Karpenter. |
 | **RDS → Databases → twolevel-autoscaling-dev-postgres / twolevel-autoscaling-dev-mysql** | Hai DB `Available`, `Multi-AZ: No`, `Publicly accessible: No`. Trong **Connectivity & security**, DB dùng subnet group riêng; security group chỉ cho phép node SG truy cập cổng 5432 hoặc 3306 tương ứng. |
 | **SQS → Queues** | Có `cart-queue`, `orders-queue`, `checkout-queue` và ba DLQ; mỗi queue chính có dead-letter queue và `maxReceiveCount = 3`. Sau lượt 2 có thêm queue xử lý gián đoạn của Karpenter. |
 | **ECR → Private registry → Repositories** | Có 5 repository: `catalog`, `cart`, `orders`, `checkout`, `recommendations`. |

@@ -18,7 +18,7 @@ node_instance_types     = ["t3.medium"]
 node_group_min_size     = 1
 node_group_max_size     = 3
 node_group_desired_size = 2
-eks_public_access_cidrs = ["203.0.113.10/32"] # REPLACE with your current public IPv4/32 before plan/apply
+eks_public_access_cidrs = ["203.0.113.10/32", "120.120.120.120/32"] # REPLACE with your current public IPv4/32 before plan/apply
 
 # ── RDS ──────────────────────────────────────
 postgres_engine_version  = "17.11"

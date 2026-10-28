@@ -69,7 +69,7 @@ module "databases" {
   tags                    = local.common_tags
 }
 
-# 6. IAM Roles for per-queue Outbox Publishers, Workers, and KEDA via Pod Identity
+# 6. IAM Roles for per-queue API Producers, Workers, and KEDA via Pod Identity
 module "iam" {
   source = "./modules/iam"
 
