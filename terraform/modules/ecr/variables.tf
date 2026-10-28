@@ -1,7 +1,7 @@
 variable "ecr_repo_names" {
   description = "List of private ECR repository names to create for backend microservices"
   type        = list(string)
-  default     = ["ui", "catalog", "cart", "orders", "checkout", "recommendations"]
+  default     = ["catalog", "cart", "orders", "checkout", "recommendations"]
 }
 
 variable "name_prefix" {

@@ -36,29 +36,18 @@ output "control_plane_security_group_id" {
 }
 
 output "node_security_group_id" {
-  description = "Security group ID shared by worker nodes and tagged for Karpenter discovery"
+  description = "Node security group attached to seed and Karpenter nodes; use as future RDS ingress source"
   value       = aws_security_group.node.id
-}
-
-# ── Identity Outputs ─────────────────────────────────────────────────────────
-output "oidc_provider_arn" {
-  description = "ARN of the IAM OIDC Provider for the cluster"
-  value       = aws_iam_openid_connect_provider.this.arn
-}
-
-output "oidc_issuer_url" {
-  description = "The URL on the EKS cluster for the OpenID Connect identity provider"
-  value       = aws_eks_cluster.this.identity[0].oidc[0].issuer
 }
 
 # ── Node Group & IAM Outputs ─────────────────────────────────────────────────
 output "node_role_arn" {
-  description = "ARN of the IAM role used by EKS worker nodes (referenced by Karpenter EC2NodeClass)"
+  description = "ARN of the IAM role used only by the seed EKS Managed Node Group"
   value       = aws_iam_role.node.arn
 }
 
 output "node_role_name" {
-  description = "Name of the IAM role used by EKS worker nodes"
+  description = "Name of the IAM role used only by the seed EKS Managed Node Group"
   value       = aws_iam_role.node.name
 }
 

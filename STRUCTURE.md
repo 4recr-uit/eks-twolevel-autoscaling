@@ -1,5 +1,7 @@
 # Cấu trúc Repo Hạ tầng – Two‑Level Autoscaling on EKS
 
+> **Bản phác thảo lịch sử, không dùng để triển khai.** Cây thư mục và nội dung bên dưới phản ánh thiết kế cũ (IRSA/OIDC của EKS, Redis, DynamoDB lock, v.v.) và không khớp Terraform hiện tại. Nguồn hiện hành là [`terraform/`](./terraform/) và [PROJECT_DECISIONS.md](../project-documentation/01-official-reports/PROJECT_DECISIONS.md). Quyết định IAM hiện tại: **EKS Pod Identity** cho ứng dụng, KEDA và Karpenter; không tạo EKS OIDC provider cho IRSA. GitHub Actions OIDC là cơ chế CI/CD riêng.
+
 Tài liệu này giải thích **từng thư mục và tệp** trong repo, mục đích, và nội dung cần có bên trong.
 
 ---
@@ -29,10 +31,6 @@ eks-twolevel-autoscaling/
 │   │   ├── ecr/                       # ECR repositories cho mỗi service
 │   │   ├── sqs/                       # SQS queues cho các worker
 │   │   └── iam/                       # IAM roles, policies dùng chung
-│   └── environments/                  # Cấu hình riêng cho từng môi trường
-│       ├── dev/
-│       ├── staging/
-│       └── prod/
 ├── kubernetes/                        # Manifest K8s (không được tạo qua Terraform)
 │   ├── namespaces/                    # Namespace definitions
 │   ├── karpenter/                     # NodePool, EC2NodeClass

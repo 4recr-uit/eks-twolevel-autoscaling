@@ -1,11 +1,11 @@
 # ── Main Queue Outputs ────────────────────────────────────────────────────────
 output "queue_urls" {
-  description = "Map of queue logical names to their SQS queue URLs (used by Producer and KEDA ScaledObject)"
+  description = "Map of queue logical names to SQS queue URLs (used by publishers, workers, and KEDA)"
   value       = { for k, v in aws_sqs_queue.this : k => v.url }
 }
 
 output "queue_arns" {
-  description = "Map of queue logical names to their SQS queue ARNs (used by IAM module for IRSA policies)"
+  description = "Map of queue logical names to their SQS queue ARNs (used by IAM policies for Pod Identity roles)"
   value       = { for k, v in aws_sqs_queue.this : k => v.arn }
 }
 

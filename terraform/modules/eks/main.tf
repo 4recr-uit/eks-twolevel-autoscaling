@@ -55,7 +55,7 @@ resource "aws_security_group" "cluster" {
 
 resource "aws_security_group" "node" {
   name        = "${var.name_prefix}-node-sg"
-  description = "Security group shared across all EKS nodes (seed nodes and Karpenter provisioned nodes)"
+  description = "Shared node security group for seed and Karpenter nodes; RDS ingress source"
   vpc_id      = var.vpc_id
 
   egress {
@@ -66,13 +66,9 @@ resource "aws_security_group" "node" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  tags = merge(
-    var.tags,
-    {
-      Name                     = "${var.name_prefix}-node-sg"
-      "karpenter.sh/discovery" = var.cluster_name
-    }
-  )
+  tags = merge(var.tags, {
+    Name = "${var.name_prefix}-node-sg"
+  })
 }
 
 # Allow worker nodes to communicate with each other
@@ -118,7 +114,13 @@ resource "aws_eks_cluster" "this" {
     subnet_ids              = concat(var.public_subnet_ids, var.private_subnet_ids)
     endpoint_private_access = true
     endpoint_public_access  = true
+    public_access_cidrs     = var.public_access_cidrs
     security_group_ids      = [aws_security_group.cluster.id]
+  }
+
+  access_config {
+    authentication_mode                         = "API_AND_CONFIG_MAP"
+    bootstrap_cluster_creator_admin_permissions = true
   }
 
   enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
@@ -131,28 +133,7 @@ resource "aws_eks_cluster" "this" {
   tags = var.tags
 }
 
-# Tag cluster-managed primary security group for Karpenter discovery
-resource "aws_ec2_tag" "cluster_primary_sg_karpenter" {
-  resource_id = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
-  key         = "karpenter.sh/discovery"
-  value       = var.cluster_name
-}
-
-# ── 4. OIDC Provider (Guarantees backward compatibility for IRSA) ─────────────
-resource "aws_iam_openid_connect_provider" "this" {
-  client_id_list  = ["sts.amazonaws.com"]
-  thumbprint_list = ["9e99a48a9960b14926cc7f3b02e22da2b0ab7280"]
-  url             = aws_eks_cluster.this.identity[0].oidc[0].issuer
-
-  tags = merge(
-    var.tags,
-    {
-      Name = "${var.cluster_name}-oidc-provider"
-    }
-  )
-}
-
-# ── 5. IAM Role for Seed Managed Node Group ───────────────────────────────────
+# ── 4. IAM Role for Seed Managed Node Group ───────────────────────────────────
 resource "aws_iam_role" "node" {
   name = "${var.name_prefix}-node-role"
 
@@ -195,7 +176,26 @@ resource "aws_iam_role_policy_attachment" "node_AmazonSSMManagedInstanceCore" {
   role       = aws_iam_role.node.name
 }
 
-# ── 6. Seed Managed Node Group (System workloads: CoreDNS, Karpenter, KEDA) ────
+# EKS does not add its primary cluster SG when a custom launch template specifies
+# SGs. Include it explicitly for control-plane/node traffic, plus the shared node
+# SG that the future RDS rules will use as their source.
+resource "aws_launch_template" "system_nodes" {
+  name_prefix = "${var.name_prefix}-system-ng-"
+
+  vpc_security_group_ids = [
+    aws_eks_cluster.this.vpc_config[0].cluster_security_group_id,
+    aws_security_group.node.id,
+  ]
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = var.tags
+  }
+
+  tags = var.tags
+}
+
+# ── 5. Seed Managed Node Group (System workloads: CoreDNS, Karpenter, KEDA) ────
 resource "aws_eks_node_group" "system" {
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = "${var.name_prefix}-system-ng"
@@ -204,6 +204,11 @@ resource "aws_eks_node_group" "system" {
 
   instance_types = var.node_instance_types
   capacity_type  = var.node_group_capacity_type
+
+  launch_template {
+    id      = aws_launch_template.system_nodes.id
+    version = aws_launch_template.system_nodes.latest_version
+  }
 
   scaling_config {
     desired_size = var.node_group_desired_size
@@ -238,7 +243,7 @@ resource "aws_eks_node_group" "system" {
   }
 }
 
-# ── 7. EKS Add-ons (Core networking + EKS Pod Identity Agent) ─────────────────
+# ── 6. EKS Add-ons (Core networking + EKS Pod Identity Agent) ─────────────────
 resource "aws_eks_addon" "vpc_cni" {
   cluster_name = aws_eks_cluster.this.name
   addon_name   = "vpc-cni"
