@@ -15,10 +15,11 @@ module "networking" {
 module "ecr" {
   source = "./modules/ecr"
 
-  name_prefix    = local.name_prefix
-  environment    = var.environment
-  ecr_repo_names = var.ecr_repo_names
-  tags           = local.common_tags
+  name_prefix          = local.name_prefix
+  environment          = var.environment
+  ecr_repo_names       = var.ecr_repo_names
+  tags                 = local.common_tags
+  image_tag_mutability = "MUTABLE"
 }
 
 # 3. SQS Queues (Worker task queues + Dead Letter Queues)
@@ -73,69 +74,23 @@ module "databases" {
 module "iam" {
   source = "./modules/iam"
 
-  name_prefix    = local.name_prefix
-  cluster_name   = module.eks.cluster_name
-  queue_arns     = module.sqs.queue_arns
-  ecr_repo_arns  = module.ecr.repository_arns
-  app_namespace  = local.namespaces.retailstore
-  keda_namespace = local.namespaces.keda
-  tags           = local.common_tags
+  name_prefix          = local.name_prefix
+  cluster_name         = module.eks.cluster_name
+  queue_arns           = module.sqs.queue_arns
+  ecr_repo_arns        = module.ecr.repository_arns
+  app_namespace        = local.namespaces.retailstore
+  keda_namespace       = local.namespaces.keda
+  enable_ecr_push_role = var.enable_ecr_push_role
+  github_oidc_subjects = var.github_oidc_subjects
+  tags                 = local.common_tags
 }
 
-# 7. Karpenter Autoscaling (Interruption Queue, Controller IAM, Helm Releases & NodePool)
+# Karpenter AWS prerequisites. Keep index [0] for existing state addresses.
 module "karpenter" {
-  count  = var.enable_cluster_addons ? 1 : 0
-  source = "./modules/karpenter"
-
-  name_prefix                       = local.name_prefix
-  environment                       = var.environment
-  tags                              = local.common_tags
-  cluster_name                      = module.eks.cluster_name
-  cluster_endpoint                  = module.eks.cluster_endpoint
-  cluster_primary_security_group_id = module.eks.cluster_primary_security_group_id
-  node_security_group_id            = module.eks.node_security_group_id
-  karpenter_version                 = var.karpenter_version
-  karpenter_namespace               = local.namespaces.karpenter
-
-  # Wait for the EKS Pod Identity agent and seed node group before Helm starts.
-  depends_on = [module.eks]
-}
-
-# 8. KEDA Operator and SQS worker autoscaling
-module "keda" {
-  count  = var.enable_cluster_addons ? 1 : 0
-  source = "./modules/keda"
-
-  keda_version          = var.keda_version
-  keda_namespace        = local.namespaces.keda
-  app_namespace         = local.namespaces.retailstore
-  aws_region            = var.aws_region
-  queue_urls            = module.sqs.queue_urls
-  enable_scaled_objects = var.enable_keda_scaled_objects
-  queue_length          = var.keda_queue_length
-  min_replica_count     = var.keda_min_replica_count
-  max_replica_count     = var.keda_max_replica_count
-  polling_interval      = var.keda_polling_interval
-  cooldown_period       = var.keda_cooldown_period
-
-  worker_deployments = {
-    "cart-queue"     = "carts-worker"
-    "checkout-queue" = "checkout-worker"
-    "orders-queue"   = "orders-worker"
-  }
-
-  # The seed nodes, Pod Identity agent, and KEDA IAM association must exist first.
-  depends_on = [module.eks, module.iam]
-}
-
-# 9. Optional local-only metrics UI for the experiment phase
-module "observability" {
-  count  = var.enable_observability ? 1 : 0
-  source = "./modules/observability"
-
-  namespace                 = var.monitoring_namespace
-  chart_version             = var.monitoring_chart_version
-  grafana_admin_secret_name = var.grafana_admin_secret_name
-
-  depends_on = [module.eks]
+  count               = 1
+  source              = "./modules/karpenter"
+  name_prefix         = local.name_prefix
+  tags                = local.common_tags
+  cluster_name        = module.eks.cluster_name
+  karpenter_namespace = local.namespaces.karpenter
 }

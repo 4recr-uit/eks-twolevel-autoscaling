@@ -188,26 +188,6 @@ output "iam_keda_role_arn" {
   value       = module.iam.keda_role_arn
 }
 
-output "keda_cluster_trigger_authentication_name" {
-  description = "ClusterTriggerAuthentication used by all three SQS worker scalers"
-  value       = var.enable_cluster_addons ? module.keda[0].cluster_trigger_authentication_name : null
-}
-
-output "keda_scaled_object_names" {
-  description = "ScaledObjects created for worker Deployments, keyed by queue name"
-  value       = var.enable_cluster_addons ? module.keda[0].scaled_object_names : {}
-}
-
-output "monitoring_release_name" {
-  description = "Monitoring release name, or null when disabled"
-  value       = var.enable_observability ? module.observability[0].release_name : null
-}
-
-output "grafana_service_name" {
-  description = "Internal Grafana service name, or null when disabled"
-  value       = var.enable_observability ? module.observability[0].grafana_service_name : null
-}
-
 output "iam_ecr_push_role_arn" {
   description = "ARN of the IAM Role for CI/CD ECR push (empty string if disabled)"
   value       = module.iam.ecr_push_role_arn
@@ -216,40 +196,30 @@ output "iam_ecr_push_role_arn" {
 # ── Karpenter ─────────────────────────────────
 output "karpenter_controller_role_arn" {
   description = "ARN of the IAM Role used by the Karpenter controller"
-  value       = var.enable_cluster_addons ? module.karpenter[0].controller_role_arn : null
+  value       = module.karpenter[0].controller_role_arn
 }
 
 output "karpenter_node_role_arn" {
   description = "ARN of the dedicated IAM role used by Karpenter-managed EC2 nodes"
-  value       = var.enable_cluster_addons ? module.karpenter[0].node_role_arn : null
+  value       = module.karpenter[0].node_role_arn
 }
 
 output "karpenter_node_role_name" {
   description = "Name of the dedicated IAM role referenced by Karpenter EC2NodeClass"
-  value       = var.enable_cluster_addons ? module.karpenter[0].node_role_name : null
+  value       = module.karpenter[0].node_role_name
 }
 
 output "karpenter_node_access_entry_arn" {
   description = "ARN of the EC2_LINUX access entry for Karpenter-managed nodes"
-  value       = var.enable_cluster_addons ? module.karpenter[0].node_access_entry_arn : null
+  value       = module.karpenter[0].node_access_entry_arn
 }
 
 output "karpenter_interruption_queue_arn" {
   description = "ARN of the SQS interruption queue used by Karpenter"
-  value       = var.enable_cluster_addons ? module.karpenter[0].interruption_queue_arn : null
+  value       = module.karpenter[0].interruption_queue_arn
 }
 
 output "karpenter_interruption_queue_name" {
   description = "Name of the SQS interruption queue"
-  value       = var.enable_cluster_addons ? module.karpenter[0].interruption_queue_name : null
-}
-
-output "karpenter_node_pool_name" {
-  description = "Name of the provisioned NodePool custom resource"
-  value       = var.enable_cluster_addons ? module.karpenter[0].node_pool_name : null
-}
-
-output "karpenter_node_class_name" {
-  description = "Name of the provisioned EC2NodeClass custom resource"
-  value       = var.enable_cluster_addons ? module.karpenter[0].node_class_name : null
+  value       = module.karpenter[0].interruption_queue_name
 }
