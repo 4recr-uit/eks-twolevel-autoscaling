@@ -3,7 +3,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/port-forward.sh [--port PORT] [--namespace NAMESPACE] [--service SERVICE]
+Usage: bash scripts/08-port-forward.sh [--port PORT] [--namespace NAMESPACE] [--service SERVICE]
 
 Forward a local port to Grafana. Defaults: port 3000, namespace monitoring,
 service monitoring-grafana. Press Ctrl+C to stop.
