@@ -16,7 +16,7 @@ locals {
   # Centralized namespace definitions
   namespaces = {
     retailstore = "retailstore"
-    monitoring  = var.monitoring_namespace
+    monitoring  = "monitoring"
     keda        = var.keda_namespace
     karpenter   = var.karpenter_namespace
   }

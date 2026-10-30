@@ -1,8 +1,8 @@
 locals {
   # The logical queue keys are stable; the ARNs are provided by the SQS module.
-  # Each outbox publisher and worker gets its own ServiceAccount and IAM role.
+  # Each API producer and worker gets its own ServiceAccount and IAM role.
   publisher_service_accounts = {
-    for queue_name in keys(var.queue_arns) : queue_name => "${trimsuffix(queue_name, "-queue")}-publisher"
+    for queue_name in keys(var.queue_arns) : queue_name => "${trimsuffix(queue_name, "-queue")}-api"
   }
   worker_service_accounts = {
     for queue_name in keys(var.queue_arns) : queue_name => "${trimsuffix(queue_name, "-queue")}-worker"
@@ -11,7 +11,7 @@ locals {
   # All ECR repository ARNs as a list for policy statements
   ecr_repo_arns_list = values(var.ecr_repo_arns)
 
-  # Shared trust policy for EKS Pod Identity (publishers, workers, KEDA)
+  # Shared trust policy for EKS Pod Identity (API producers, workers, KEDA)
   pod_identity_trust_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -27,7 +27,8 @@ locals {
   })
 }
 
-# 1. OUTBOX PUBLISHERS — one Pod Identity role per main queue
+# 1. API PRODUCERS — one Pod Identity role per main queue
+# Retain publisher resource addresses and role names for existing Terraform state.
 
 resource "aws_iam_role" "publisher" {
   for_each = var.queue_arns

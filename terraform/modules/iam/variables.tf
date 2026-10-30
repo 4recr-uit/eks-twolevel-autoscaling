@@ -12,7 +12,7 @@ variable "cluster_name" {
 
 # ── Kubernetes Namespaces & Service Accounts ──────────────
 variable "app_namespace" {
-  description = "Kubernetes namespace where outbox publisher and worker pods run"
+  description = "Kubernetes namespace where API producer and worker pods run"
   type        = string
   default     = "retailstore"
 }

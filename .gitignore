@@ -45,7 +45,16 @@ terraform/terraform.tfvars
 terraform/**/.terraform/
 terraform/**/*.tfstate
 terraform/**/*.tfstate.backup
-terraform/**/.terraform.lock.hcl
+
 
 # Documentation
 PROJECT.md
+# Deployment configuration and rendered artifacts
+.generated/
+__pycache__/
+terraform/**/.terraform.lock.hcl
+!terraform/.terraform.lock.hcl
+!kubernetes/environments/**/versions.json
+!kubernetes/charts/**/values.schema.json
+!observability/dashboards/autoscaling-overview.json
+!tests/fixtures/*.json

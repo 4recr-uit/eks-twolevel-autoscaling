@@ -1,11 +1,11 @@
-# ── Outbox Publisher Outputs ──────────────────────────────
+# ── API Producer Outputs (publisher names retained for compatibility) ──────────────────────────────
 output "publisher_role_arns" {
-  description = "Pod Identity IAM role ARNs for outbox publishers, keyed by main queue"
+  description = "Pod Identity IAM role ARNs for API producers, keyed by main queue"
   value       = { for queue_name, role in aws_iam_role.publisher : queue_name => role.arn }
 }
 
 output "publisher_service_accounts" {
-  description = "Outbox publisher ServiceAccount names, keyed by main queue"
+  description = "API producer ServiceAccount names, keyed by main queue"
   value       = local.publisher_service_accounts
 }
 

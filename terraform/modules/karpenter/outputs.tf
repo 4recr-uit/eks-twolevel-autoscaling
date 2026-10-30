@@ -40,14 +40,3 @@ output "interruption_queue_url" {
   description = "URL of the SQS interruption queue"
   value       = aws_sqs_queue.interruption.url
 }
-
-# ── Karpenter Custom Resource Outputs ──────────────────────────────────────────
-output "node_class_name" {
-  description = "Name of the provisioned EC2NodeClass custom resource"
-  value       = "default"
-}
-
-output "node_pool_name" {
-  description = "Name of the provisioned NodePool custom resource"
-  value       = "default"
-}

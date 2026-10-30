@@ -134,12 +134,6 @@ variable "db_create_final_snapshot" {
 }
 
 # ── Karpenter ─────────────────────────────────
-variable "karpenter_version" {
-  description = "Helm chart version for Karpenter"
-  type        = string
-  default     = "1.15.0"
-}
-
 variable "karpenter_namespace" {
   description = "Kubernetes namespace for Karpenter"
   type        = string
@@ -147,117 +141,13 @@ variable "karpenter_namespace" {
 }
 
 # ── KEDA ──────────────────────────────────────
-variable "keda_version" {
-  description = "Helm chart version for KEDA"
-  type        = string
-  default     = "2.21.0"
-}
-
 variable "keda_namespace" {
   description = "Kubernetes namespace for KEDA"
   type        = string
   default     = "keda"
 }
 
-variable "enable_cluster_addons" {
-  description = "Install Karpenter and KEDA after the EKS cluster exists; false for the first AWS-only apply"
-  type        = bool
-  default     = false
-}
-
-variable "enable_keda_scaled_objects" {
-  description = "Create SQS ScaledObjects after the three worker Deployments and retailstore namespace exist"
-  type        = bool
-  default     = false
-}
-
-variable "keda_queue_length" {
-  description = "Target SQS backlog per worker replica"
-  type        = number
-  default     = 10
-
-  validation {
-    condition     = var.keda_queue_length >= 1
-    error_message = "keda_queue_length must be at least 1."
-  }
-}
-
-variable "keda_min_replica_count" {
-  description = "Minimum worker replicas for KEDA (0 for scale-to-zero, 1 for HPA comparison)"
-  type        = number
-  default     = 0
-
-  validation {
-    condition     = var.keda_min_replica_count >= 0
-    error_message = "keda_min_replica_count cannot be negative."
-  }
-}
-
-variable "keda_max_replica_count" {
-  description = "Maximum replicas for each KEDA managed worker Deployment"
-  type        = number
-  default     = 10
-
-  validation {
-    condition     = var.keda_max_replica_count >= 1
-    error_message = "keda_max_replica_count must be at least 1."
-  }
-}
-
-variable "keda_polling_interval" {
-  description = "Seconds between KEDA SQS polls"
-  type        = number
-  default     = 30
-
-  validation {
-    condition     = var.keda_polling_interval >= 1
-    error_message = "keda_polling_interval must be at least 1 second."
-  }
-}
-
-variable "keda_cooldown_period" {
-  description = "Seconds before KEDA scales inactive workers to zero"
-  type        = number
-  default     = 300
-
-  validation {
-    condition     = var.keda_cooldown_period >= 0
-    error_message = "keda_cooldown_period cannot be negative."
-  }
-}
-
-# ── Observability ─────────────────────────────
-variable "monitoring_namespace" {
-  description = "Kubernetes namespace for Prometheus and Grafana"
-  type        = string
-  default     = "monitoring"
-}
-
-variable "enable_observability" {
-  description = "Install private Prometheus/Grafana stack during the measurement phase"
-  type        = bool
-  default     = false
-}
-
-variable "monitoring_chart_version" {
-  description = "Pinned kube-prometheus-stack chart version"
-  type        = string
-  default     = "92.7.0"
-}
-
-variable "grafana_admin_secret_name" {
-  description = "Pre-existing Kubernetes Secret with admin-user and admin-password keys"
-  type        = string
-  default     = "grafana-admin"
-}
-
-variable "grafana_admin_password" {
-  description = "Deprecated, unused: create grafana_admin_secret_name in Kubernetes instead to keep the password out of Terraform state"
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
+# ── Cost alert ────────────────────────────────
 variable "budget_alert_email" {
   description = "Email for an 80% AWS monthly cost budget alert; null creates the budget without an email notification"
   type        = string
@@ -265,7 +155,7 @@ variable "budget_alert_email" {
 }
 
 variable "monthly_budget_usd" {
-  description = "Monthly AWS budget limit in USD when budget_alert_email is set"
+  description = "Monthly AWS cost budget in USD; notification requires budget_alert_email"
   type        = number
   default     = 100
 
@@ -298,5 +188,24 @@ variable "sqs_message_retention" {
 variable "ecr_repo_names" {
   description = "List of ECR repository names for backend microservices"
   type        = list(string)
-  default     = ["catalog", "cart", "orders", "checkout", "recommendations"]
+  default     = ["catalog", "cart", "orders", "checkout", "recommendations", "root"]
+}
+
+variable "enable_ecr_push_role" {
+  description = "Create the GitHub Actions ECR push role; requires an existing GitHub OIDC provider in this AWS account"
+  type        = bool
+  default     = false
+}
+
+variable "github_oidc_subjects" {
+  description = "Exact GitHub OIDC sub claims allowed to push images; match the repository's actual subject format"
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = !var.enable_ecr_push_role || (length(var.github_oidc_subjects) > 0 && alltrue([
+      for subject in var.github_oidc_subjects : startswith(subject, "repo:") && !strcontains(subject, "*") && !strcontains(subject, "?")
+    ]))
+    error_message = "When enable_ecr_push_role is true, supply explicit repo: GitHub OIDC subjects without wildcards."
+  }
 }

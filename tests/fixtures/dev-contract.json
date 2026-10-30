@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "account_id": "111122223333",
+  "region": "us-east-1",
+  "environment": "dev",
+  "cluster_name": "twolevel-test",
+  "cluster_endpoint": "https://example.invalid",
+  "kubernetes_version": "1.36",
+  "namespaces": {
+    "retailstore": "retailstore",
+    "karpenter": "karpenter",
+    "keda": "keda",
+    "monitoring": "monitoring"
+  },
+  "node_role": "test-node-role",
+  "interruption_queue": "test-interruptions",
+  "security_group_ids": [
+    "sg-0123456789abcdef0"
+  ],
+  "queue_urls": {
+    "cart-queue": "https://sqs.us-east-1.amazonaws.com/111122223333/cart-queue",
+    "orders-queue": "https://sqs.us-east-1.amazonaws.com/111122223333/orders-queue",
+    "checkout-queue": "https://sqs.us-east-1.amazonaws.com/111122223333/checkout-queue"
+  },
+  "ecr_urls": {
+    "cart": "111122223333.dkr.ecr.us-east-1.amazonaws.com/cart",
+    "orders": "111122223333.dkr.ecr.us-east-1.amazonaws.com/orders",
+    "checkout": "111122223333.dkr.ecr.us-east-1.amazonaws.com/checkout",
+    "catalog": "111122223333.dkr.ecr.us-east-1.amazonaws.com/catalog",
+    "recommendations": "111122223333.dkr.ecr.us-east-1.amazonaws.com/recommendations"
+  },
+  "postgres_host": "postgres.example.invalid",
+  "mysql_host": "mysql.example.invalid",
+  "api_accounts": {
+    "cart-queue": "cart-api",
+    "orders-queue": "orders-api",
+    "checkout-queue": "checkout-api"
+  },
+  "worker_accounts": {
+    "cart-queue": "cart-worker",
+    "orders-queue": "orders-worker",
+    "checkout-queue": "checkout-worker"
+  },
+  "keda_service_account": "keda-operator",
+  "karpenter_service_account": "karpenter"
+}
