@@ -1,56 +1,92 @@
-# Hướng dẫn triển khai Terraform
+# Terraform: hạ tầng AWS
 
-Thư mục này tạo VPC, EKS, ECR, ba hàng đợi SQS kèm DLQ, hai RDS Single-AZ (PostgreSQL và MySQL), IAM/Pod Identity và AWS Budget. Karpenter, KEDA và monitoring được bật ở các lượt triển khai sau. Các lệnh dưới đây chạy trong thư mục `terraform`; ví dụ dùng Region `us-east-1` và cluster `twolevel-autoscaling-dev`.
+Terraform tạo VPC, EKS/seed node group, EKS managed add-ons, IAM/Pod Identity, ECR, SQS/DLQ, RDS, Budget và AWS prerequisites cho Karpenter. Các thành phần Kubernetes được triển khai sau bằng Bash/Helm.
 
-## 1. Chuẩn bị
-
-- Cài Terraform **>= 1.10**, AWS CLI và `kubectl`; cấu hình AWS credentials có quyền tạo các tài nguyên trên. Kiểm tra tài khoản bằng `aws sts get-caller-identity`.
-- S3 bucket `tfstate-bucket-2006` trong `us-east-1` phải tồn tại và tài khoản cần quyền đọc/ghi state. Nếu dùng bucket khác, sửa `backend.tf` trước khi chạy `terraform init`.
-- Nếu chưa có, sao chép `terraform.tfvars.example` thành `terraform.tfvars`. Thay `eks_public_access_cidrs` bằng **IPv4 công khai hiện tại** của máy quản trị ở dạng `/32`; `203.0.113.10/32` chỉ là giá trị mẫu. Đặt `budget_alert_email` nếu muốn nhận cảnh báo chi phí ở ngưỡng 80%.
-- Kiểm tra `monthly_budget_usd`, cấu hình RDS và hai biến `db_deletion_protection`, `db_create_final_snapshot`. Giá trị mẫu phù hợp môi trường đồ án có thể hủy; dữ liệu cần giữ phải được sao lưu trước khi xóa.
-
-## 2. Triển khai
-
-**Lượt 1 — hạ tầng nền:** giữ `enable_cluster_addons = false`, `enable_keda_scaled_objects = false` và `enable_observability = false` trong `terraform.tfvars`.
+Chạy lệnh từ root directory:
 
 ```bash
-terraform init
-terraform fmt -check -recursive
-terraform validate
-terraform plan
-terraform apply
-aws eks update-kubeconfig --region us-east-1 --name twolevel-autoscaling-dev
-kubectl get nodes
+terraform -chdir=terraform init
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform validate
+terraform -chdir=terraform plan
+terraform -chdir=terraform apply
+terraform -chdir=terraform state list
+terraform -chdir=terraform output platform_contract
 ```
 
-Chỉ tiếp tục khi cluster và seed node group đã sẵn sàng; với cấu hình mẫu, `kubectl get nodes` hiển thị hai node `Ready`. Nếu thay `project_name`, `environment` hoặc `aws_region`, dùng tên cluster/Region tương ứng trong lệnh `update-kubeconfig`.
+Chuẩn bị S3 backend đã cấu hình trong backend.tf, AWS credentials và tfvars riêng theo terraform.tfvars.example. Đặt đúng EKS API CIDR, ngân sách, RDS deletion protection/snapshot policy cho môi trường. Local tfvars/state không commit. Các biến cài add-on/scaling/monitoring đã chuyển sang kubernetes/environments/dev và script options.
 
-**Lượt 2 — autoscaling:** đặt `enable_cluster_addons = true`, rồi chạy `terraform plan` và `terraform apply` lần nữa. Kiểm tra:
+`platform_contract` là output không chứa secret để bạn xem và điền tên cluster, role, queue, DB host và identity mappings vào YAML Kubernetes. Đây không phải file credentials. `module.karpenter[0]` được giữ để không đổi địa chỉ AWS resources có sẵn; module luôn tạo AWS prerequisites.
 
-```bash
-kubectl get pods -n karpenter
-kubectl get ec2nodeclass,nodepool
-kubectl get pods -n keda
-kubectl get clustertriggerauthentication
-```
+Deploy tiếp theo: [DEPLOYMENT.md](../docs/DEPLOYMENT.md). Gỡ workload và node Karpenter theo runbook trước khi review `terraform plan -destroy`; không hủy cluster khi controllers còn cần xử lý tài nguyên bên ngoài.
 
-Các Pod phải `Running`; `EC2NodeClass` và `NodePool` phải `Ready`. Karpenter chỉ tạo thêm EC2 node khi có Pod cần tài nguyên. Sau khi đã triển khai ba worker Deployment (`carts-worker`, `orders-worker`, `checkout-worker`) trong namespace `retailstore`, mới đặt `enable_keda_scaled_objects = true` và apply tiếp; kiểm tra bằng `kubectl get scaledobjects -n retailstore`. Chart tổng đặt fullname Cart là `carts`; nếu cài chart Cart riêng, đặt `fullnameOverride=carts` để tên Deployment khớp.
+## GitHub Actions push ECR
 
-Monitoring là tùy chọn: tạo trước Secret `grafana-admin` trong namespace `monitoring` với hai khóa `admin-user`, `admin-password`, sau đó đặt `enable_observability = true` và apply. Dashboard chỉ truy cập nội bộ qua `kubectl port-forward`.
+`enable_ecr_push_role` mặc định `false`. Khi cần CI, đăng ký GitHub OIDC provider
+`https://token.actions.githubusercontent.com` với audience `sts.amazonaws.com`
+trong đúng AWS account trước; Terraform hiện chỉ tạo role và policy, không tạo provider.
+Đặt `enable_ecr_push_role = true` và điền `github_oidc_subjects` bằng các `sub`
+claim chính xác của repo/job. Ví dụ dạng truyền thống cho nhánh main:
+`repo:YOUR_ORG/YOUR_REPO:ref:refs/heads/main`. Job dùng environment hoặc repo dùng
+immutable subject claims có định dạng khác. Cấu hình từ chối subject rỗng/wildcard
+khi bật role. Role chỉ có quyền push vào các ECR repository của dự án và không cấp
+quyền deploy Kubernetes. ARN sau apply: `terraform -chdir=terraform output iam_ecr_push_role_arn`.
 
-## 3. Kiểm tra trên AWS Console
+Nguồn: [AWS GitHub OIDC trust](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-idp_oidc.html),
+[GitHub OIDC subject formats](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
 
-Đăng nhập [AWS Management Console](https://console.aws.amazon.com/), chọn **us-east-1** (hoặc Region đã cấu hình), rồi kiểm tra:
+## RDS và chi phí
 
-| Dịch vụ / đường dẫn | Kết quả mong đợi |
+Các biến `db_*` áp dụng cho cả PostgreSQL và MySQL:
+
+| Biến | Hành vi và chi phí |
 | --- | --- |
-| **VPC → Your VPCs / Subnets / Route tables** | VPC `twolevel-autoscaling-dev-vpc`; 2 public, 2 private cho EKS và 2 database subnet. Route table database chỉ có route nội bộ VPC. |
-| **EKS → Clusters → twolevel-autoscaling-dev** | Cluster `Active`; trong **Compute**, managed node group `Active`. Trong **Access → Pod Identity**, có các association cho API producer, worker và KEDA; sau lượt 2 có thêm Karpenter. |
-| **RDS → Databases → twolevel-autoscaling-dev-postgres / twolevel-autoscaling-dev-mysql** | Hai DB `Available`, `Multi-AZ: No`, `Publicly accessible: No`. Trong **Connectivity & security**, DB dùng subnet group riêng; security group chỉ cho phép node SG truy cập cổng 5432 hoặc 3306 tương ứng. |
-| **SQS → Queues** | Có `cart-queue`, `orders-queue`, `checkout-queue` và ba DLQ; mỗi queue chính có dead-letter queue và `maxReceiveCount = 3`. Sau lượt 2 có thêm queue xử lý gián đoạn của Karpenter. |
-| **ECR → Private registry → Repositories** | Có 5 repository: `catalog`, `cart`, `orders`, `checkout`, `recommendations`. |
-| **Billing and Cost Management → Budgets** | Budget `twolevel-autoscaling-dev-monthly-cost` theo mức trong `monthly_budget_usd`; email cảnh báo chỉ có nếu đã cấu hình `budget_alert_email`. |
+| `db_instance_class` | Loại máy cho mỗi DB; tính phí instance theo thời gian chạy. Hiện Single-AZ. |
+| `db_allocated_storage = 20` | 20 GiB gp3 cho mỗi DB, tổng 40 GiB provisioned. Storage autoscaling đang tắt. |
+| `db_backup_retention_days = 1` | Bật automated backups/PITR với thời gian giữ một ngày; 0 tắt automated backup. Giữ lâu hơn có thể tăng backup storage. |
+| `db_deletion_protection = false` | Cho phép xóa DB. Bật true chặn xóa đến khi tắt lại; không có phí riêng cho cờ này, nhưng DB còn tồn tại vẫn chịu phí. |
+| `db_create_final_snapshot = false` | Khi xóa DB, không yêu cầu final snapshot. Nếu true, snapshot còn lại có thể tiếp tục chịu phí storage đến khi được xóa. |
 
-Karpenter và KEDA được cài bằng Helm nên kiểm tra trạng thái chạy bằng `kubectl` như ở lượt 2, không tìm chúng trong danh sách **EKS Add-ons**. Để xem ID, endpoint và URL thực tế, chạy `terraform output`.
+Backup RDS lưu trong Amazon S3 do RDS quản lý, không phải bucket Terraform state
+và không phải bucket bạn tự cấu hình. Xem/restore qua RDS Backups/Snapshots.
+Automated backup bao gồm snapshot instance và transaction logs để phục hồi theo
+thời điểm; không phải SQL dump riêng từng database. Trong cùng account/region,
+AWS có allowance backup storage bằng 100% tổng provisioned DB storage; phần vượt
+allowance chịu phí. Không thể kết luận retention một ngày luôn miễn phí.
+Final/manual snapshots tồn tại độc lập với DB; code hiện không yêu cầu giữ lại
+automated backups khi xóa instance. Snapshot cuối dùng tên cố định `*-postgres-final`
+và `*-mysql-final`: trước lần xóa tiếp theo phải tránh trùng snapshot đã tồn tại.
 
-Khi kết thúc, sao lưu dữ liệu và kết quả đo cần giữ rồi chạy `terraform plan -destroy` trước `terraform destroy`. Kiểm tra lại trên Console các snapshot, EBS volume, load balancer và tài nguyên còn tính phí sau khi hủy.
+Nguồn: [AWS RDS backups và storage allowance](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithAutomatedBackups.html).
+
+Các nguồn chi phí khác gồm EKS control plane, EC2/EBS của nodes, NAT Gateway
+(thời gian tồn tại và lưu lượng), public IPv4, ECR storage/scanning tùy cấu hình,
+SQS requests, Secrets Manager cho RDS master secrets, CloudWatch logs và S3 state.
+Karpenter tạo thêm EC2/EBS sau khi triển khai cũng làm tăng chi phí ngoài số seed nodes.
+Budget là cảnh báo chi phí, không tự dừng hoặc giới hạn tài nguyên ở 100 USD.
+RDS `db.t4g.micro` dùng Unlimited mode: tải CPU kéo dài vượt baseline có thể
+phát sinh phí CPU credits ngoài phí instance.
+
+Nguồn giá: [EKS](https://aws.amazon.com/eks/pricing/),
+[NAT và IPv4](https://aws.amazon.com/vpc/pricing/),
+[RDS T4g CPU credits](https://aws.amazon.com/rds/instance-types/).
+
+## Seed managed node group
+
+`node_instance_types` chọn loại EC2; `node_group_min_size` và `node_group_max_size`
+là biên số node; `node_group_desired_size` là số node mong muốn lúc tạo group.
+Với min=1/max=3/desired=2, group ban đầu duy trì hai node, không tự scale theo
+Pod Pending chỉ vì max=3. Repo không cài Cluster Autoscaler cho group này.
+Karpenter quản lý nhóm node khác theo NodePool, không tự tăng seed group.
+`ignore_changes` đang bỏ qua thay đổi desired size sau khi tạo: sửa desired trong
+tfvars không bảo đảm resize group qua apply; dùng quy trình resize EKS riêng.
+
+Nodes này có label `role=system`. Values Kubernetes hiện đặt controllers,
+monitoring và các API/backend trên nhóm đó. Hai `t3.small` cần được kiểm tra
+CPU/RAM và giới hạn Pod trước khi xem là đủ cho toàn bộ workload.
+
+Nguồn: [EKS scaling configuration](https://docs.aws.amazon.com/eks/latest/APIReference/API_NodegroupScalingConfig.html).
+
+Biến mật khẩu Grafana đã được gỡ khỏi Terraform; monitoring dùng Kubernetes
+Secret ở bước triển khai cluster. `removed.tf` vẫn giữ địa chỉ module observability
+cũ với `destroy=false` để chuyển state an toàn; đây không phải cấu hình cài monitoring.

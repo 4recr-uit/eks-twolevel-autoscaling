@@ -6,10 +6,10 @@ project_name = "twolevel-autoscaling"
 environment  = "dev"
 
 # ── Networking (VPC) ──────────────────────────
-vpc_cidr             = "10.0.0.0/16"
-availability_zones   = ["us-east-1a", "us-east-1b"]
-public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
-private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+vpc_cidr              = "10.0.0.0/16"
+availability_zones    = ["us-east-1a", "us-east-1b"]
+public_subnet_cidrs   = ["10.0.1.0/24", "10.0.2.0/24"]
+private_subnet_cidrs  = ["10.0.10.0/24", "10.0.11.0/24"]
 database_subnet_cidrs = ["10.0.20.0/24", "10.0.21.0/24"]
 
 # ── EKS ──────────────────────────────────────
@@ -30,25 +30,10 @@ db_deletion_protection   = false # Disposable coursework environment only
 db_create_final_snapshot = false # Export or snapshot data before destroy if needed
 
 # ── Karpenter ─────────────────────────────────
-karpenter_version   = "1.15.0"
 karpenter_namespace = "karpenter"
 
 # ── KEDA ──────────────────────────────────────
-keda_version   = "2.21.0"
 keda_namespace = "keda"
-enable_cluster_addons = false # Set true for the second apply after EKS nodes are Ready
-enable_keda_scaled_objects = false # Set true after retailstore and worker Deployments exist
-keda_queue_length          = 10
-keda_min_replica_count     = 0
-keda_max_replica_count     = 10
-keda_polling_interval      = 30
-keda_cooldown_period       = 300
-
-# ── Observability ─────────────────────────────
-monitoring_namespace   = "monitoring"
-enable_observability   = false # Turn on for Phase 4 after creating grafana-admin Secret
-monitoring_chart_version = "92.7.0"
-grafana_admin_secret_name = "grafana-admin"
 
 # ── Cost alert ───────────────────────────────
 budget_alert_email = null # Set to an email address to receive the 80% monthly cost alert
@@ -61,3 +46,13 @@ sqs_message_retention  = 345600
 
 # ── ECR ───────────────────────────────────────
 ecr_repo_names = ["catalog", "cart", "orders", "checkout", "recommendations", "ui"]
+
+# ── GitHub Actions ECR push (optional) ────────
+# First register token.actions.githubusercontent.com in IAM with audience sts.amazonaws.com.
+# This configuration creates the role/policy only, not the account-wide OIDC provider.
+enable_ecr_push_role = false
+github_oidc_subjects = []
+# To enable, set true and replace with the exact sub claim for your repository/job:
+# github_oidc_subjects = ["repo:YOUR_ORG/YOUR_REPO:ref:refs/heads/main"]
+# Jobs using GitHub environments and repositories using immutable subject claims
+# have different sub formats; use the actual claim rather than copying this example.
