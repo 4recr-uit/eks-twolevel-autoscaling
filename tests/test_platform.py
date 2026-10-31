@@ -10,8 +10,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXTURE = json.loads((ROOT / "tests/fixtures/dev-contract.json").read_text())
-DEPLOY = ("bootstrap.sh", "export-config.sh", "deploy-monitoring.sh", "deploy-platform.sh",
-          "deploy-apps.sh", "deploy-autoscaling.sh", "verify.sh", "teardown.sh")
+DEPLOY = ("02-bootstrap.sh", "01-export-config.sh", "03-deploy-monitoring.sh", "04-deploy-platform.sh",
+          "05-deploy-apps.sh", "06-deploy-autoscaling.sh", "07-verify.sh", "09-teardown.sh")
 
 
 def render(chart, values, overrides=None, namespace="retailstore"):
@@ -98,11 +98,11 @@ if [[ "$name $*" == *"get nodeclaims -o name"* ]]; then printf '%s' "$PENDING_CL
             return result, trace.read_text() if trace.exists() else ""
 
     def test_deployment_order_and_explicit_chart_paths(self):
-        result, calls = self.mock_run("deploy-platform.sh")
+        result, calls = self.mock_run("04-deploy-platform.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertLess(calls.index("--install karpenter-crd"), calls.index("--install karpenter oci"))
         self.assertLess(calls.index("--install keda"), calls.index("--install platform-config"))
-        result, calls = self.mock_run("deploy-apps.sh")
+        result, calls = self.mock_run("05-deploy-apps.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         for service in ("cart", "orders", "checkout", "catalog", "recommendations"):
             self.assertIn("../retailstore-backend-microservices/src/" + service + "/chart", calls)
@@ -110,7 +110,7 @@ if [[ "$name $*" == *"get nodeclaims -o name"* ]]; then printf '%s' "$PENDING_CL
         self.assertNotIn(".generated", calls)
 
     def test_native_error_stops_later_releases(self):
-        result, calls = self.mock_run("deploy-apps.sh", fail="--install orders")
+        result, calls = self.mock_run("05-deploy-apps.sh", fail="--install orders")
         self.assertEqual(result.returncode, 42)
         self.assertIn("--install cart", calls)
         self.assertNotIn("--install checkout", calls)
@@ -122,16 +122,16 @@ if [[ "$name $*" == *"get nodeclaims -o name"* ]]; then printf '%s' "$PENDING_CL
             self.assertEqual(calls, "", script)
 
     def test_remaining_nodeclaims_keep_controller_installed(self):
-        result, calls = self.mock_run("teardown.sh", claims="nodeclaim/still-running")
+        result, calls = self.mock_run("09-teardown.sh", claims="nodeclaim/still-running")
         self.assertEqual(result.returncode, 1)
         self.assertNotIn("helm uninstall karpenter ", calls)
-        result, calls = self.mock_run("teardown.sh")
+        result, calls = self.mock_run("09-teardown.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("--cascade=foreground", calls)
         self.assertIn("helm uninstall karpenter ", calls)
 
     def test_verify_checks_monitoring_rollouts(self):
-        result, calls = self.mock_run("verify.sh")
+        result, calls = self.mock_run("07-verify.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("rollout status deployment/monitoring-grafana", calls)
         self.assertIn("rollout status statefulset/prometheus-monitoring-kube-prometheus-prometheus", calls)

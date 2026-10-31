@@ -1,0 +1,11 @@
+nodeSelector:
+  role: system
+prometheus:
+  operator:
+    enabled: true
+    serviceMonitor: {enabled: true}
+
+serviceAccount:
+  operator:
+    create: true
+    name: keda-operator

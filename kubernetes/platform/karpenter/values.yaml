@@ -1,0 +1,13 @@
+replicas: 2
+nodeSelector:
+  role: system
+controller:
+  resources:
+    requests: {cpu: 200m, memory: 256Mi}
+    limits: {memory: 1Gi}
+
+serviceAccount:
+  create: true
+  name: karpenter
+serviceMonitor:
+  enabled: true
