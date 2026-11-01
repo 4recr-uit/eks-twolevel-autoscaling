@@ -1,0 +1,18 @@
+# Sửa endpoint, queue URL và image/tag theo môi trường trước khi triển khai.
+image:
+  repository: 150105760238.dkr.ecr.us-east-1.amazonaws.com/catalog
+  tag: latest
+  pullPolicy: Always
+fullnameOverride: catalog
+nodeSelector: { eks.amazonaws.com/nodegroup: null, role: system }
+app:
+  persistence:
+    endpoint: twolevel-autoscaling-dev-mysql.ceb0a0oo6thh.us-east-1.rds.amazonaws.com:3306
+    provider: mysql
+    database: catalogdb
+    secret: { create: false, name: catalog-db }
+
+# CA ConfigMap must exist in namespace retailstore before deploying.
+databaseTLS:
+  enabled: true
+  caConfigMapName: rds-ca

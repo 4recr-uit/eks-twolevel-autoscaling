@@ -1,0 +1,17 @@
+{{- if .Values.monitoring }}
+# Catalog does not ship a ServiceMonitor; other app charts own their monitors.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: catalog
+  namespace: {{ .Values.runtime.namespaces.retailstore }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: catalog
+      app.kubernetes.io/component: service
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- end }}

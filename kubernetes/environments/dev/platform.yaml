@@ -1,0 +1,19 @@
+nodePool:
+  name: default
+  amiAlias: "al2023@v20261026"
+  capacityTypes: [on-demand]
+  instanceCategories: [c, m, t]
+  cpuLimit: "100"
+  memoryLimit: 400Gi
+  consolidateAfter: 1m
+monitoring: true
+
+runtime:
+  cluster_name: twolevel-autoscaling-dev
+  environment: dev
+  node_role: twolevel-autoscaling-dev-karpenter-node-role
+  security_group_ids:
+    - sg-0dbc668f0f71ef8be
+    - sg-045d95fcffd7b9661
+  namespaces:
+    retailstore: retailstore

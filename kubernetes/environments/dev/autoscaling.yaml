@@ -1,0 +1,15 @@
+scaling:
+  min: 0
+  max: 10
+  queueLength: 10
+  pollingInterval: 30
+  cooldownPeriod: 300
+
+runtime:
+  region: us-east-1
+  namespaces:
+    retailstore: retailstore
+  queue_urls:
+    cart-queue: https://sqs.us-east-1.amazonaws.com/150105760238/cart-queue
+    orders-queue: https://sqs.us-east-1.amazonaws.com/150105760238/orders-queue
+    checkout-queue: https://sqs.us-east-1.amazonaws.com/150105760238/checkout-queue

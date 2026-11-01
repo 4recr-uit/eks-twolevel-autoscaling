@@ -35,12 +35,19 @@ class ManifestTests(unittest.TestCase):
             "--set", "nodePool.amiAlias=al2023@latest"], capture_output=True, text=True)
         self.assertNotEqual(invalid.returncode, 0)
 
+    def test_nodepool_can_be_enabled_separately(self):
+        disabled = render("platform-config", "kubernetes/environments/dev/platform.yaml",
+                          {"nodePool": {"enabled": False}})
+        self.assertIn("kind: ClusterTriggerAuthentication", disabled)
+        self.assertNotIn("kind: NodePool", disabled)
+        self.assertNotIn("kind: EC2NodeClass", disabled)
+
     def test_scaler_names_auth_and_queues_match_manual_app_values(self):
         rendered = render("worker-scaling", "kubernetes/environments/dev/autoscaling.yaml")
         self.assertEqual(rendered.count("kind: ScaledObject"), 3)
         for service, deployment in (("cart", "carts-worker"), ("orders", "orders-worker"), ("checkout", "checkout-worker")):
             self.assertIn("name: " + deployment + "-sqs", rendered)
-            self.assertIn("REPLACE_" + service.upper() + "_QUEUE_URL", rendered)
+            self.assertIn("/" + service + "-queue", rendered)
         self.assertEqual(rendered.count("name: keda-sqs-pod-identity"), 3)
 
     def test_backend_values_override_defaults_without_secrets_or_duplicate_scalers(self):
@@ -61,9 +68,16 @@ class ManifestTests(unittest.TestCase):
                     self.assertIn("path: /ready", result)
                 else:
                     worker = result.split("templates/deployment-worker.yaml", 1)[1].split("---", 1)[0]
-                    self.assertNotIn("  replicas:", worker)
-                    self.assertIn("REPLACE_POSTGRES_ENDPOINT", result)
-                    self.assertIn("REPLACE_" + service.upper() + "_QUEUE_URL", result)
+                    self.assertIn("  replicas: 1", worker)
+                    self.assertNotIn("karpenter.sh/nodepool", worker)
+                    self.assertIn("/" + service + "-queue", result)
+                    keda = subprocess.run(["helm", "template", service, str(backend / "src" / service / "chart"),
+                        "-n", "retailstore", "-f", str(values), "-f",
+                        str(ROOT / "kubernetes/environments/dev/apps/worker-keda.yaml")],
+                        check=True, capture_output=True, text=True).stdout
+                    keda_worker = keda.split("templates/deployment-worker.yaml", 1)[1].split("---", 1)[0]
+                    self.assertNotIn("  replicas:", keda_worker)
+                    self.assertNotIn("karpenter.sh/nodepool", keda_worker)
 
 
 class ScriptTests(unittest.TestCase):
@@ -101,7 +115,8 @@ if [[ "$name $*" == *"get nodeclaims -o name"* ]]; then printf '%s' "$PENDING_CL
         result, calls = self.mock_run("04-deploy-platform.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertLess(calls.index("--install karpenter-crd"), calls.index("--install karpenter oci"))
-        self.assertLess(calls.index("--install keda"), calls.index("--install platform-config"))
+        self.assertIn("--install keda", calls)
+        self.assertNotIn("--install platform-config", calls)
         result, calls = self.mock_run("05-deploy-apps.sh")
         self.assertEqual(result.returncode, 0, result.stderr)
         for service in ("cart", "orders", "checkout", "catalog", "recommendations"):
