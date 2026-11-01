@@ -1,0 +1,27 @@
+{{- $r := .Values.runtime -}}
+{{- if or (lt (int .Values.scaling.min) 0) (le (int .Values.scaling.max) (int .Values.scaling.min)) }}{{ fail "scaling.max must exceed nonnegative scaling.min" }}{{ end }}
+{{- if lt (int .Values.scaling.queueLength) 1 }}{{ fail "queueLength must be positive" }}{{ end }}
+{{- range $queue, $worker := dict "cart-queue" "carts-worker" "orders-queue" "orders-worker" "checkout-queue" "checkout-worker" }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $worker }}-sqs
+  namespace: {{ $r.namespaces.retailstore }}
+spec:
+  scaleTargetRef: {name: {{ $worker }}}
+  minReplicaCount: {{ $.Values.scaling.min }}
+  maxReplicaCount: {{ $.Values.scaling.max }}
+  pollingInterval: {{ $.Values.scaling.pollingInterval }}
+  cooldownPeriod: {{ $.Values.scaling.cooldownPeriod }}
+  triggers:
+    - type: aws-sqs-queue
+      metadata:
+        queueURL: {{ required (printf "Missing queue %s" $queue) (index $r.queue_urls $queue) | quote }}
+        awsRegion: {{ $r.region | quote }}
+        queueLength: {{ $.Values.scaling.queueLength | quote }}
+        scaleOnInFlight: 'true'
+      authenticationRef:
+        kind: ClusterTriggerAuthentication
+        name: keda-sqs-pod-identity
+{{- end }}

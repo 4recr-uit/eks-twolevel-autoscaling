@@ -1,0 +1,3 @@
+# Apply after the baseline values when enabling KEDA.
+worker:
+  externalAutoscaling: true

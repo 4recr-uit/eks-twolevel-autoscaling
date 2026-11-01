@@ -3,20 +3,21 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: bash scripts/08-port-forward.sh [--port PORT] [--namespace NAMESPACE] [--service SERVICE]
+Usage: bash scripts/08-port-forward.sh [--port PORT] [--namespace NAMESPACE] [--service SERVICE] [--context CONTEXT]
 
 Forward a local port to Grafana. Defaults: port 3000, namespace monitoring,
-service monitoring-grafana. Press Ctrl+C to stop.
+service monitoring-grafana, context twolevel-dev. Press Ctrl+C to stop.
 EOF
 }
 
 port=3000
 namespace=monitoring
 service=monitoring-grafana
+context=twolevel-dev
 
 while (( $# )); do
   case "$1" in
-    --port|--namespace|--service)
+    --port|--namespace|--service|--context)
       if (( $# < 2 )) || [[ -z "$2" || "$2" == --* ]]; then
         printf 'Missing value for %s\n' "$1" >&2
         exit 2
@@ -25,6 +26,7 @@ while (( $# )); do
         --port) port=$2 ;;
         --namespace) namespace=$2 ;;
         --service) service=$2 ;;
+        --context) context=$2 ;;
       esac
       shift 2
       ;;
@@ -45,4 +47,4 @@ fi
 
 printf 'Forwarding http://localhost:%s to service/%s in namespace %s.\n' "$port" "$service" "$namespace"
 printf 'Wait for the kubectl forwarding message, then open the URL. Press Ctrl+C to stop.\n'
-exec kubectl -n "$namespace" port-forward --address 127.0.0.1 "service/$service" "$port:80"
+exec kubectl --context "$context" -n "$namespace" port-forward --address 127.0.0.1 "service/$service" "$port:80"

@@ -1,0 +1,35 @@
+# Sửa endpoint, queue URL và image/tag theo môi trường trước khi triển khai.
+image:
+  repository: 150105760238.dkr.ecr.us-east-1.amazonaws.com/orders
+  tag: latest
+  pullPolicy: Always
+fullnameOverride: orders
+database:
+  host: twolevel-autoscaling-dev-postgres.ceb0a0oo6thh.us-east-1.rds.amazonaws.com
+  port: 5432
+  user: orders_app
+  name: retaildb
+  sslmode: verify-full
+  secret: { create: false, name: orders-db }
+api:
+  serviceMonitor: { enabled: true }
+  nodeSelector: { eks.amazonaws.com/nodegroup: null, role: system }
+worker:
+  serviceMonitor: { enabled: true }
+  externalAutoscaling: false
+  replicaCount: 1
+  nodeSelector: {}
+  tolerations: []
+  scaledObject: { enabled: false }
+
+sqs:
+  queueUrl: https://sqs.us-east-1.amazonaws.com/150105760238/orders-queue
+  region: us-east-1
+  endpoint: ""
+apiServiceAccount: { create: false, name: orders-api }
+workerServiceAccount: { create: false, name: orders-worker }
+
+# CA ConfigMap must exist in namespace retailstore before deploying.
+databaseTLS:
+  enabled: true
+  caConfigMapName: rds-ca

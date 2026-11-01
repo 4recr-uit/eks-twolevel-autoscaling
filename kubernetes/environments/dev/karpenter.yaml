@@ -1,0 +1,4 @@
+settings:
+  clusterName: twolevel-autoscaling-dev
+  clusterEndpoint: https://F90D5FE031BB26794D7959C7392EC3E7.gr7.us-east-1.eks.amazonaws.com
+  interruptionQueue: twolevel-autoscaling-dev-karpenter
