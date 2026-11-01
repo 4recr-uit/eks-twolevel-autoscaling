@@ -1,0 +1,4 @@
+# Chạy trên node hệ thống; Metrics Server chỉ cần một replica cho môi trường dev.
+replicas: 1
+nodeSelector:
+  role: system
