@@ -6,6 +6,9 @@
 credentials
 config.json
 kubeconfig_*
+# Local Kubernetes credentials; only *.example.yaml belongs in Git.
+kubernetes/environments/**/secrets/*.local.yaml
+kubernetes/environments/**/secrets/*.local.yml
 
 # Terraform
 **/.terraform/*
@@ -46,9 +49,11 @@ terraform/**/.terraform/
 terraform/**/*.tfstate
 terraform/**/*.tfstate.backup
 
-
 # Documentation
 PROJECT.md
+STRUCTURE.md
+local/**
+
 # Deployment configuration and rendered artifacts
 .generated/
 __pycache__/
