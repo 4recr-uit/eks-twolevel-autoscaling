@@ -6,6 +6,12 @@ set -euo pipefail
 kubectl --context twolevel-dev wait --for=condition=Established crd/servicemonitors.monitoring.coreos.com --timeout=900s
 helm template platform-config kubernetes/charts/platform-config -f kubernetes/environments/dev/platform.yaml > /dev/null
 
+# Cài đặt Metrics Server để cung cấp CPU/memory metrics cho HPA và kubectl top.
+helm upgrade --install metrics-server metrics-server --repo https://kubernetes-sigs.github.io/metrics-server/ \
+  --version 3.14.0 --namespace kube-system --kube-context twolevel-dev \
+  -f kubernetes/platform/metrics-server/values.yaml --wait --timeout 900s
+kubectl --context twolevel-dev wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s
+
 # Cài Karpenter CRDs trước controller.
 helm upgrade --install karpenter-crd oci://public.ecr.aws/karpenter/karpenter-crd \
   --version 1.15.0 --namespace karpenter --kube-context twolevel-dev --wait --timeout 900s

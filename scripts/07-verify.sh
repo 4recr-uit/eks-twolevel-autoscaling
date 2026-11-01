@@ -4,6 +4,8 @@ set -euo pipefail
 
 # Chạy từ thư mục gốc repo hạ tầng, dùng cấu hình dev.
 # Chỉ kiểm tra trạng thái; không sinh cấu hình hoặc gửi tải thử.
+kubectl --context twolevel-dev -n kube-system rollout status deployment/metrics-server --timeout=900s
+kubectl --context twolevel-dev wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s
 kubectl --context twolevel-dev -n karpenter rollout status deployment/karpenter --timeout=900s
 kubectl --context twolevel-dev -n keda rollout status deployment/keda-operator --timeout=900s
 kubectl --context twolevel-dev -n keda rollout status deployment/keda-operator-metrics-apiserver --timeout=900s
