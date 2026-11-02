@@ -1,0 +1,4 @@
+worker:
+  externalAutoscaling: true
+  scaledObject:
+    enabled: false

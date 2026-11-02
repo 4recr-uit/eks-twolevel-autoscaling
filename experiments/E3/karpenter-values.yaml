@@ -1,0 +1,13 @@
+# Overlay dùng cùng kubernetes/environments/dev/platform.yaml.
+# Release E3 sở hữu riêng NodePool/NodeClass; không tạo auth/monitor chung.
+nodePool:
+  enabled: true
+  name: e3-orders
+  instanceTypes: [c7i-flex.large]
+  capacityTypes: [on-demand]
+  cpuLimit: "8"
+  memoryLimit: 16Gi
+  consolidateAfter: Never
+kedaAuthentication:
+  enabled: false
+monitoring: false

@@ -1,0 +1,6 @@
+worker:
+  externalAutoscaling: true
+  nodeSelector:
+    karpenter.sh/nodepool: e3-orders
+  scaledObject:
+    enabled: false
