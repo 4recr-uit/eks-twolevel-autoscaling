@@ -1,1 +1,7 @@
 runtime: {}
+
+# Mặc định giữ hành vi tạo scaler cho cả ba worker.
+workers:
+  cart: true
+  orders: true
+  checkout: true

@@ -1,0 +1,28 @@
+# Tạm giữ chỗ cho tối đa 10 worker với requests tương đương Orders.
+# Xóa Deployment sau khi tất cả pod Ready; NodePool E3 không consolidate.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e3-warm-capacity
+  namespace: retailstore
+  labels:
+    experiments.retailstore.dev/owner: e3
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: e3-warm-capacity
+  template:
+    metadata:
+      labels:
+        app: e3-warm-capacity
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: e3-orders
+      containers:
+        - name: reserve
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests:
+              cpu: 128m
+              memory: 256Mi
