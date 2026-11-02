@@ -271,6 +271,12 @@ Từ đây mỗi lần upgrade Cart, Orders hoặc Checkout phải dùng thêm f
 apps/worker-keda.yaml; không chạy lại các lệnh deploy baseline ở bước 8.
 KEDA có thể giảm worker xuống 0 khi hàng đợi rỗng.
 
+Chart `worker-scaling` mặc định tạo cả ba ScaledObject. Values `workers.cart`,
+`workers.orders`, `workers.checkout` có thể đặt `false` để bỏ worker tương ứng.
+Nếu upgrade release đã tồn tại, việc đổi một giá trị sang `false` sẽ xóa
+ScaledObject do release đó đang quản lý. E1–E3 dùng ScaledObject riêng cho Orders;
+không bật scaler Orders từ release chung cùng lúc với scaler của experiment.
+
 ## 10. Bật NodePool Karpenter
 
 Sau khi quan sát KEDA, bật NodePool. Không chạy lại helm install ở bước 9

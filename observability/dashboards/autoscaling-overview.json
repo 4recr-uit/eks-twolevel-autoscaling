@@ -2,8 +2,8 @@
   "uid": "twolevel-autoscaling",
   "title": "Two-level autoscaling",
   "schemaVersion": 39,
-  "version": 1,
-  "refresh": "15s",
+  "version": 2,
+  "refresh": "1m",
   "time": {
     "from": "now-1h",
     "to": "now"
@@ -12,9 +12,37 @@
     "list": [
       {
         "name": "datasource",
+        "label": "Prometheus",
         "type": "datasource",
         "query": "prometheus",
         "current": {}
+      },
+      {
+        "name": "cloudwatch",
+        "label": "CloudWatch",
+        "type": "datasource",
+        "query": "cloudwatch",
+        "current": {}
+      },
+      {
+        "name": "region",
+        "label": "AWS region",
+        "type": "textbox",
+        "query": "us-east-1",
+        "current": {
+          "text": "us-east-1",
+          "value": "us-east-1"
+        }
+      },
+      {
+        "name": "queue",
+        "label": "SQS queue",
+        "type": "textbox",
+        "query": "orders-queue",
+        "current": {
+          "text": "orders-queue",
+          "value": "orders-queue"
+        }
       }
     ]
   },
@@ -22,7 +50,8 @@
     {
       "id": 1,
       "type": "timeseries",
-      "title": "Worker desired replicas",
+      "title": "Worker desired and ready replicas",
+      "description": "Desired is not necessarily ready. A missing series is not zero.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -33,17 +62,38 @@
         "w": 12,
         "h": 8
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "kube_deployment_spec_replicas{namespace=\"retailstore\",deployment=~\".*-worker\"}"
+          "expr": "kube_deployment_spec_replicas{namespace=\"retailstore\",deployment=~\".*-worker\"}",
+          "legendFormat": "{{deployment}} desired",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "kube_deployment_status_replicas_ready{namespace=\"retailstore\",deployment=~\".*-worker\"}",
+          "legendFormat": "{{deployment}} ready",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
         }
       ]
     },
     {
       "id": 2,
       "type": "timeseries",
-      "title": "Ready nodes",
+      "title": "Worker pods Pending",
+      "description": "Pending reason requires Kubernetes events. No data can mean no matching pod.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -54,17 +104,29 @@
         "w": 12,
         "h": 8
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})"
+          "expr": "sum by (pod) (kube_pod_status_phase{namespace=\"retailstore\",pod=~\".*-worker-.*\",phase=\"Pending\"} == 1)",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
         }
       ]
     },
     {
       "id": 3,
       "type": "timeseries",
-      "title": "KEDA scaler activity",
+      "title": "Nodes: total and Ready",
+      "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -75,17 +137,38 @@
         "w": 12,
         "h": 8
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "keda_scaler_active"
+          "expr": "count(kube_node_info)",
+          "legendFormat": "total",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum(kube_node_status_condition{condition=\"Ready\",status=\"true\"})",
+          "legendFormat": "ready",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
         }
       ]
     },
     {
       "id": 4,
       "type": "timeseries",
-      "title": "Karpenter nodes created",
+      "title": "HPA current and desired",
+      "description": "No data is expected when there is no HPA.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -96,10 +179,652 @@
         "w": 12,
         "h": 8
       },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(karpenter_nodes_created_total)"
+          "expr": "kube_horizontalpodautoscaler_status_current_replicas{namespace=\"retailstore\"}",
+          "legendFormat": "{{horizontalpodautoscaler}} current",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"retailstore\"}",
+          "legendFormat": "{{horizontalpodautoscaler}} desired",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Worker CPU usage",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cores"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"retailstore\",pod=~\".*-worker-.*\",container!=\"\",container!=\"POD\"}[5m]))",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Worker memory working set",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 16,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"retailstore\",pod=~\".*-worker-.*\",container!=\"\",container!=\"POD\"})",
+          "legendFormat": "{{pod}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Node CPU utilization",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m])))",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Node memory utilization",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 24,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)",
+          "legendFormat": "{{instance}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Jobs published per second",
+      "description": "Published jobs from producer metrics; 5-minute rate.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service,queue) (rate(app_sqs_messages_published_total[5m]))",
+          "legendFormat": "{{service}} / {{queue}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Worker tasks per second by status",
+      "description": "Inspect status labels; processing attempts are not necessarily unique job completions.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 32,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service,queue,status) (rate(worker_tasks_processed_total[5m]))",
+          "legendFormat": "{{service}} / {{queue}} / {{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Worker in-flight tasks",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (service,queue) (worker_in_flight_tasks)",
+          "legendFormat": "{{service}} / {{queue}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Worker task duration percentiles",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 40,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le,service,queue) (rate(worker_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le,service,queue) (rate(worker_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le,service,queue) (rate(worker_task_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Queue wait percentiles",
+      "description": "Histogram estimates; values beyond finite buckets and low sample counts limit accuracy.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le,service,queue) (rate(worker_job_queue_wait_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le,service,queue) (rate(worker_job_queue_wait_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le,service,queue) (rate(worker_job_queue_wait_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "Completion latency percentiles",
+      "description": "Histogram estimates, including first jobs; use job logs for exact first-job timeline.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 48,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum by (le,service,queue) (rate(worker_job_e2e_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum by (le,service,queue) (rate(worker_job_e2e_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum by (le,service,queue) (rate(worker_job_e2e_latency_seconds_bucket[5m])))",
+          "legendFormat": "{{service}} / {{queue}} p99",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "KEDA scaler activity",
+      "description": "No series if scaler absent, inactive series not emitted, or target/metric unavailable; check targets.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "keda_scaler_active",
+          "legendFormat": "{{scaledObject}} {{scaler}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "Nodes in Karpenter cluster state",
+      "description": "Current nodes observed in Karpenter cluster state; this is not a count of nodes provisioned by Karpenter. Use NodeClaims and events for provisioning timeline.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 56,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max(karpenter_cluster_state_node_count)",
+          "legendFormat": "nodes observed",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          }
+        }
+      ]
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "SQS visible messages (Maximum)",
+      "description": "CloudWatch, approximate values; data may be delayed or absent. Requires configured CloudWatch datasource and AWS permissions.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${cloudwatch}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${cloudwatch}"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/SQS",
+          "metricName": "ApproximateNumberOfMessagesVisible",
+          "region": "${region}",
+          "dimensions": {
+            "QueueName": "${queue}"
+          },
+          "statistic": "Maximum",
+          "period": "60",
+          "matchExact": true
+        }
+      ]
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "SQS in-flight messages (Maximum)",
+      "description": "CloudWatch approximate messages received but not deleted.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${cloudwatch}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 64,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${cloudwatch}"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/SQS",
+          "metricName": "ApproximateNumberOfMessagesNotVisible",
+          "region": "${region}",
+          "dimensions": {
+            "QueueName": "${queue}"
+          },
+          "statistic": "Maximum",
+          "period": "60",
+          "matchExact": true
+        }
+      ]
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "SQS delayed messages (Maximum)",
+      "description": "CloudWatch approximate delayed messages; no data is not necessarily zero.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${cloudwatch}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${cloudwatch}"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/SQS",
+          "metricName": "ApproximateNumberOfMessagesDelayed",
+          "region": "${region}",
+          "dimensions": {
+            "QueueName": "${queue}"
+          },
+          "statistic": "Maximum",
+          "period": "60",
+          "matchExact": true
+        }
+      ]
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "SQS age of oldest message (Maximum)",
+      "description": "CloudWatch approximate age, subject to SQS message lifecycle.",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "${cloudwatch}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 72,
+        "w": 12,
+        "h": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "${cloudwatch}"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/SQS",
+          "metricName": "ApproximateAgeOfOldestMessage",
+          "region": "${region}",
+          "dimensions": {
+            "QueueName": "${queue}"
+          },
+          "statistic": "Maximum",
+          "period": "60",
+          "matchExact": true
         }
       ]
     }

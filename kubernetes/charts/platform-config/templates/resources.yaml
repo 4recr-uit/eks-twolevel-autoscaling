@@ -43,6 +43,11 @@ spec:
         - key: karpenter.k8s.aws/instance-category
           operator: In
           values: {{ .Values.nodePool.instanceCategories | toJson }}
+        {{- with .Values.nodePool.instanceTypes }}
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: {{ . | toJson }}
+        {{- end }}
         - {key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ['2']}
   limits:
     cpu: {{ .Values.nodePool.cpuLimit | quote }}
@@ -51,6 +56,7 @@ spec:
     consolidationPolicy: WhenEmptyOrUnderutilized
     consolidateAfter: {{ .Values.nodePool.consolidateAfter }}
 {{- end }}
+{{- if .Values.kedaAuthentication.enabled }}
 ---
 apiVersion: keda.sh/v1alpha1
 kind: ClusterTriggerAuthentication
@@ -60,3 +66,4 @@ spec:
   podIdentity:
     provider: aws
     identityOwner: keda
+{{- end }}
