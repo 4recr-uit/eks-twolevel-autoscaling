@@ -2,7 +2,7 @@
 
 ## Mục tiêu
 
-Ước lượng throughput thành công của một worker khi có đủ việc, rồi dùng kết quả làm cơ sở chọn tải Steady, Step và Burst cho các pilot tiếp theo. E0 là bước chuẩn bị, không so sánh autoscaler. Chưa có kết quả thực nghiệm hoặc script riêng cho E0.
+Ước lượng throughput thành công của một worker khi có đủ việc, rồi dùng kết quả làm cơ sở chọn tải Steady, Step và Burst cho các pilot tiếp theo. E0 là bước chuẩn bị, không so sánh autoscaler. Chưa có kết quả thực nghiệm; dùng bộ công cụ trong [_shared](../_shared/README.md) để tạo hồ sơ và thu dữ liệu.
 
 ## Phạm vi và điều kiện
 
@@ -22,6 +22,30 @@
 6. Lưu cấu hình, thời gian UTC, kết quả producer, metrics và logs; khôi phục worker và xác nhận trạng thái ban đầu.
 
 Workload hiện có ở [E1/workload.js](../E1/workload.js) tính tốc độ theo **request/s**. Số task được chấp nhận còn phụ thuộc batch size và kết quả từng request. SQS backlog là xấp xỉ; Prometheus counters không thay thế đối soát job ID. Nếu không thấy plateau hoặc không đủ mẫu đáng tin cậy, ghi `μ: chưa xác định`.
+
+## Cách chạy
+
+1. Terminal 1: mở Prometheus và giữ terminal chạy:
+```bash
+kubectl --context twolevel-dev -n monitoring port-forward service/monitoring-kube-prometheus-prometheus 9090:9090
+```
+2. Terminal 2: bắt đầu thu vào đúng thư mục đã init:
+```bash
+python experiments/_shared/collect.py --run-dir experiments/results/E0/E0-single-worker-step-r01
+```
+3. Chờ dòng ĐANG THU, lấy khoảng 15–30 giây baseline, rồi chạy k6 ở terminal 3. Lệnh k6 cần xuất summary vào:
+```bash
+experiments/results/E0/E0-single-worker-step-r01/raw/k6-summary.json
+```
+4. Khi tải dừng và queue drain, nhấn Ctrl+C một lần ở terminal 2. Chờ thông báo Đã lưu; script sẽ lấy mẫu cuối, xuất Prometheus và lưu log/snapshot.
+5. Mở collection-summary.md trước, kiểm tra cảnh báo rồi đối chiếu các file trong metrics/, events/, logs/ và kết quả k6 để điền bảng E0.
+Script ghi thời gian thu trong collection.json, giữ nguyên metadata.json và notes.md. Bạn cần ghi riêng thời gian các pha workload để tính throughput ở đúng đoạn ổn định. Trạng thái thu finished chưa tự chứng minh lượt hợp lệ hay xác định được μ.
+
+## Thu và lưu dữ liệu
+
+Tạo hồ sơ bằng `_shared/run.py init`, mở port-forward Prometheus và chạy [_shared/collect.py](../_shared/collect.py) với `--run-dir` trỏ đến hồ sơ. Chờ **ĐANG THU** trước khi phát tải; k6 xuất summary vào `raw/k6-summary.json` của lượt đó. Sau khi dừng producer và queue drain, nhấn Ctrl+C ở collector và chờ xuất xong. Lệnh đầy đủ và ý nghĩa từng file ở [mục 7 của hướng dẫn dùng chung](../_shared/README.md#7-thu-dữ-liệu-e0-bằng-collectpy).
+
+Kiểm tra `collection-summary.md`, cảnh báo/lỗi và các file trong `metrics/`, `events/`, `logs/`; ghi thời gian workload, cấu hình và đánh giá hợp lệ trước khi điền bảng. Cửa sổ thu gồm baseline/drain, không tự động là cửa sổ tính μ. Lượt `step` có thể dùng thăm dò; các lượt xác nhận năng lực ở một mức tải nên dùng `steady` và phân tích phần ổn định.
 
 ## Kết quả
 
