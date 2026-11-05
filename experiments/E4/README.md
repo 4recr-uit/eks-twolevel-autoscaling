@@ -16,7 +16,7 @@ Giữ cùng workload, worker ban đầu, image digest, requests/limits, KEDA set
 ## Chuẩn bị và thực hiện
 
 1. Hoàn thành pilot E0–E3, kiểm tra queue/DLQ, KEDA, Karpenter, quota, subnet và system capacity; chuẩn bị chi phí và cách khôi phục.
-2. Dùng cấu hình và hướng dẫn từng bước tại [E3/run.sh](../E3/run.sh) và [E3 README](../E3/README.md). File `run.sh` là runbook: mở và chạy từng nhóm, không chạy cả file.
+2. Trong mỗi terminal, vào `experiments/E4`. Dùng [run.sh của E4](run.sh) và tham khảo [E3 README](../E3/README.md); runbook E4 dùng lại manifest/tài nguyên E3 và bản lưu `../../.generated/e3/`. Mở `run.sh` và chạy từng nhóm lệnh, không chạy cả file.
 3. Chuẩn bị một nhánh cho mỗi lượt; ghi node/pod ban đầu, run ID và thời gian UTC. Thu metrics, events, logs và SQS trước khi tạo tải.
 4. Phát cùng workload, dừng producer và theo dõi queue drain; lặp ít nhất 3 lượt hợp lệ cho từng nhánh. Có thể dùng lại lượt E3 elastic nếu toàn bộ điều kiện so sánh phù hợp.
 5. Khôi phục worker và tài nguyên E3 theo hướng dẫn. Chỉ thu hồi node/NodeClaim sau khi xác nhận đúng phạm vi; việc này có thể chấm dứt EC2.

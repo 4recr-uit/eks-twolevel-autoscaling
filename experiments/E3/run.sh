@@ -3,7 +3,7 @@
 exit 0
 
 # 1. CHUẨN BỊ — kiểm tra cluster, tài nguyên E3 và baseline.
-cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling
+# Terminal này cần đang ở thư mục experiments/E3.
 kubectl --context twolevel-dev get nodes -o wide
 kubectl --context twolevel-dev -n retailstore get deployment orders-worker
 kubectl --context twolevel-dev -n karpenter get pods
@@ -24,26 +24,26 @@ kubectl --context twolevel-dev -n retailstore get hpa e3-orders-keda-hpa --ignor
 
 # Lưu baseline; không ghi đè. File local có thể chứa dữ liệu nhạy cảm.
 umask 077
-mkdir -p .generated/e3
-test ! -e .generated/e3/orders-original-values.yaml && helm get values orders \
-  --namespace retailstore --kube-context twolevel-dev -o yaml > .generated/e3/orders-original-values.yaml
-test ! -e .generated/e3/orders-original-replicas.txt && kubectl --context twolevel-dev \
-  -n retailstore get deployment orders-worker -o jsonpath='{.spec.replicas}' > .generated/e3/orders-original-replicas.txt
-test -s .generated/e3/orders-original-values.yaml
-test -s .generated/e3/orders-original-replicas.txt
+mkdir -p ../../.generated/e3
+test ! -e ../../.generated/e3/orders-original-values.yaml && helm get values orders \
+  --namespace retailstore --kube-context twolevel-dev -o yaml > ../../.generated/e3/orders-original-values.yaml
+test ! -e ../../.generated/e3/orders-original-replicas.txt && kubectl --context twolevel-dev \
+  -n retailstore get deployment orders-worker -o jsonpath='{.spec.replicas}' > ../../.generated/e3/orders-original-replicas.txt
+test -s ../../.generated/e3/orders-original-values.yaml
+test -s ../../.generated/e3/orders-original-replicas.txt
 
 # 2. NODEPOOL E3 — release mới, không sửa NodePool hoặc auth chung.
 # Chỉ install khi tên release/NodePool/NodeClass ở bước 1 chưa tồn tại.
-helm template e3-capacity kubernetes/charts/platform-config \
-  --namespace karpenter -f kubernetes/environments/dev/platform.yaml -f experiments/E3/karpenter-values.yaml
-helm install e3-capacity kubernetes/charts/platform-config \
+helm template e3-capacity ../../kubernetes/charts/platform-config \
+  --namespace karpenter -f ../../kubernetes/environments/dev/platform.yaml -f ./karpenter-values.yaml
+helm install e3-capacity ../../kubernetes/charts/platform-config \
   --namespace karpenter --kube-context twolevel-dev \
-  -f kubernetes/environments/dev/platform.yaml -f experiments/E3/karpenter-values.yaml --wait --timeout 900s
+  -f ../../kubernetes/environments/dev/platform.yaml -f ./karpenter-values.yaml --wait --timeout 900s
 kubectl --context twolevel-dev wait --for=condition=Ready ec2nodeclass/e3-orders nodepool/e3-orders --timeout=900s
 
 # 3A. WARM — chỉ chạy nhánh này khi muốn chuẩn bị node sẵn.
 # 10 pod giữ chỗ có requests như Orders; sẽ tạo EC2 và phát sinh phí.
-kubectl --context twolevel-dev -n retailstore apply -f experiments/E3/warm-capacity.yaml
+kubectl --context twolevel-dev -n retailstore apply -f ./warm-capacity.yaml
 kubectl --context twolevel-dev -n retailstore rollout status deployment/e3-warm-capacity --timeout=900s
 kubectl --context twolevel-dev -n retailstore get pods -l app=e3-warm-capacity -o wide
 kubectl --context twolevel-dev get nodes -l karpenter.sh/nodepool=e3-orders -o wide
@@ -64,11 +64,11 @@ kubectl --context twolevel-dev get nodes -l karpenter.sh/nodepool=e3-orders -o w
 kubectl --context twolevel-dev get nodeclaims -l karpenter.sh/nodepool=e3-orders
 
 # 4. ORDERS + KEDA E3 — áp dụng cho nhánh đã chọn, không dùng scaler chung.
-helm upgrade orders ../retailstore-backend-microservices/src/orders/chart \
+helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart \
   --namespace retailstore --kube-context twolevel-dev \
-  -f .generated/e3/orders-original-values.yaml \
-  -f experiments/E3/autoscaled-values.yaml --wait --timeout 900s
-kubectl --context twolevel-dev -n retailstore apply -f experiments/E3/keda.yaml
+  -f ../../.generated/e3/orders-original-values.yaml \
+  -f ./autoscaled-values.yaml --wait --timeout 900s
+kubectl --context twolevel-dev -n retailstore apply -f ./keda.yaml
 kubectl --context twolevel-dev -n retailstore wait --for=condition=Ready scaledobject/e3-orders-sqs --timeout=300s
 kubectl --context twolevel-dev -n retailstore get deployment orders-worker
 kubectl --context twolevel-dev -n retailstore get pods -o wide
@@ -79,10 +79,10 @@ kubectl --context twolevel-dev get nodes,nodeclaims
 kubectl --context twolevel-dev -n retailstore port-forward service/orders 8082:80
 
 # Terminal khác: chạy profile giống nhau cho 2 nhánh, đổi tên từng lượt.
-cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling
-mkdir -p experiments/E3/results
-k6 run -e PROFILE=step --summary-export experiments/E3/results/warm-step-1.json experiments/E1/workload.js
-k6 run -e PROFILE=step --summary-export experiments/E3/results/elastic-step-1.json experiments/E1/workload.js
+# Terminal này cần đang ở thư mục experiments/E3.
+mkdir -p ./results
+k6 run -e PROFILE=step --summary-export ./results/warm-step-1.json ../E1/workload.js
+k6 run -e PROFILE=step --summary-export ./results/elastic-step-1.json ../E1/workload.js
 # Chỉ chạy lệnh tương ứng nhánh đã chuẩn bị. Theo dõi queue, pod Pending, node,
 # NodeClaim, events, throughput và thời gian. Nếu không có Pending do thiếu
 # capacity hoặc không tạo node ở nhánh elastic, điều chỉnh pilot và đo lại.
@@ -102,12 +102,12 @@ kubectl --context twolevel-dev -n retailstore delete triggerauthentication e3-or
 kubectl --context twolevel-dev -n retailstore delete deployment e3-warm-capacity --ignore-not-found --wait=true
 
 # Trả worker về baseline trước khi gỡ NodePool; giữ system controllers hoạt động.
-test -s .generated/e3/orders-original-values.yaml
-test -s .generated/e3/orders-original-replicas.txt
-helm upgrade orders ../retailstore-backend-microservices/src/orders/chart \
+test -s ../../.generated/e3/orders-original-values.yaml
+test -s ../../.generated/e3/orders-original-replicas.txt
+helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart \
   --namespace retailstore --kube-context twolevel-dev \
-  -f .generated/e3/orders-original-values.yaml --wait --timeout 900s
-kubectl --context twolevel-dev -n retailstore scale deployment/orders-worker --replicas="$(cat .generated/e3/orders-original-replicas.txt)"
+  -f ../../.generated/e3/orders-original-values.yaml --wait --timeout 900s
+kubectl --context twolevel-dev -n retailstore scale deployment/orders-worker --replicas="$(cat ../../.generated/e3/orders-original-replicas.txt)"
 kubectl --context twolevel-dev -n retailstore rollout status deployment/orders-worker --timeout=900s
 kubectl --context twolevel-dev -n retailstore get pods -o wide
 
@@ -120,4 +120,4 @@ kubectl --context twolevel-dev get nodes -l karpenter.sh/nodepool=e3-orders
 # Kiểm tra NodeClaim/node/EC2 E3 đã được thu hồi trước khi tắt controller.
 # Để đo nhánh còn lại, giữ file baseline và bắt đầu lại từ bước 2.
 # Sau khi kết thúc mọi nhánh và xác nhận khôi phục thành công, xóa file lưu tạm.
-rm -f -- .generated/e3/orders-original-values.yaml .generated/e3/orders-original-replicas.txt
+rm -f -- ../../.generated/e3/orders-original-values.yaml ../../.generated/e3/orders-original-replicas.txt

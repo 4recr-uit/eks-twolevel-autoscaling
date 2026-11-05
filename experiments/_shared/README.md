@@ -1,19 +1,21 @@
 # Quy ước dùng chung cho E0–E5
 
+E0 và E1 có bộ công cụ độc lập trong [E0](../E0/README.md) và [E1](../E1/README.md); dùng runbook tương ứng cho các lượt mới. Các lệnh E0 bên dưới là bộ cũ được giữ để tương thích với dữ liệu/quy trình trước đây.
+
 Thư mục này hỗ trợ cấu hình mục tiêu, tạo hồ sơ và kiểm tra trạng thái. `collect.py` chỉ thu dữ liệu E0; các công cụ không phát tải, thay đổi replica, apply manifest hay khôi phục cluster. Xem runbook từng kịch bản để thực hiện những bước đó.
 
 ## 1. Chuẩn bị
 
-Chạy từ thư mục gốc repo trong Git Bash. Cần Python 3.10+, `kubectl` và các công cụ trong runbook; collector E0 cần thêm AWS CLI. `inspect` cần quyền đọc namespace, Deployment, HPA và ScaledObject.
+Chạy trong thư mục của kịch bản, ví dụ `experiments/E0`, trong Git Bash. Cần Python 3.10+, `kubectl` và các công cụ trong runbook; collector E0 cần thêm AWS CLI. `inspect` cần quyền đọc namespace, Deployment, HPA và ScaledObject.
 
 ```bash
-cp -n experiments/_shared/config.example.sh experiments/_shared/config.local.sh
+cp -n ../_shared/config.example.sh ../_shared/config.local.sh
 ```
 
 Mở `config.local.sh`, kiểm tra và sửa context, namespace, Deployment, **tên** queue và region, rồi nạp:
 
 ```bash
-source experiments/_shared/config.local.sh
+source ../_shared/config.local.sh
 ```
 
 Các giá trị mẫu không chứng minh tài nguyên đã tồn tại; `cp -n` giữ file cũ nếu có. Không lưu credential, Secret, kubeconfig hoặc dữ liệu nhạy cảm trong cấu hình, metadata hay kết quả.
@@ -21,7 +23,7 @@ Các giá trị mẫu không chứng minh tài nguyên đã tồn tại; `cp -n`
 ## 2. Kiểm tra mục tiêu
 
 ```bash
-python experiments/_shared/run.py inspect \
+python ../_shared/run.py inspect \
   --context "$EXPERIMENT_CONTEXT" \
   --namespace "$EXPERIMENT_NAMESPACE" \
   --deployment "$EXPERIMENT_DEPLOYMENT"
@@ -34,14 +36,14 @@ Lệnh chỉ đọc desired/ready replicas và các HPA/ScaledObject cùng targe
 Ví dụ lượt E0, một worker, steady, lần 1:
 
 ```bash
-python experiments/_shared/run.py init \
+python ../_shared/run.py init \
   --scenario E0 --variant single-worker --profile steady --attempt 1 \
   --context "$EXPERIMENT_CONTEXT" --namespace "$EXPERIMENT_NAMESPACE" \
   --deployment "$EXPERIMENT_DEPLOYMENT" --queue "$EXPERIMENT_QUEUE" \
   --region "$EXPERIMENT_AWS_REGION"
 ```
 
-Lệnh tạo `experiments/results/E0/E0-single-worker-steady-r01/`. Mỗi lượt dùng attempt mới; lệnh không ghi đè hồ sơ đã tồn tại. Variant/profile dùng chữ thường, số và dấu `-`; attempt từ 1 đến 999. Mỗi tổ hợp cần tối thiểu ba lượt hợp lệ theo thiết kế.
+Lệnh tạo `../results/E0/E0-single-worker-steady-r01/`. Mỗi lượt dùng attempt mới; lệnh không ghi đè hồ sơ đã tồn tại. Variant/profile dùng chữ thường, số và dấu `-`; attempt từ 1 đến 999. Mỗi tổ hợp cần tối thiểu ba lượt hợp lệ theo thiết kế.
 
 - `metadata.json`: mục tiêu, commit, thời điểm chuẩn bị và trạng thái đánh giá.
 - `notes.md`: cấu hình, thời gian các pha, nguồn dữ liệu và lý do đánh giá.
@@ -87,9 +89,9 @@ kubectl --context twolevel-dev -n monitoring port-forward \
 **Terminal 2:** dùng đúng thư mục đã init; `--check` chỉ kiểm tra, không thu:
 
 ```bash
-RUN_DIR='experiments/results/E0/E0-single-worker-steady-r01'
-python experiments/_shared/collect.py --run-dir "$RUN_DIR" --check
-python experiments/_shared/collect.py --run-dir "$RUN_DIR"
+RUN_DIR='../results/E0/E0-single-worker-steady-r01'
+python ../_shared/collect.py --run-dir "$RUN_DIR" --check
+python ../_shared/collect.py --run-dir "$RUN_DIR"
 ```
 
 Chờ **ĐANG THU**, lấy 15–30 giây baseline, rồi chạy workload ở terminal khác; đặt lại `RUN_DIR` trong terminal đó và xuất k6 summary vào `$RUN_DIR/raw/k6-summary.json`. Ghi UTC bắt đầu/kết thúc workload và các pha vào `notes.md`. Dùng lượt `steady` riêng để xác nhận μ; `step` dùng thăm dò và cần phân tích từng pha.

@@ -1,0 +1,5 @@
+worker:
+  externalAutoscaling: false
+  replicaCount: 1
+  scaledObject:
+    enabled: false

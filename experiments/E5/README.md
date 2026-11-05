@@ -14,6 +14,8 @@ So sánh thời gian xử lý job đầu tiên và tài nguyên idle giữa work
 
 Giữ sẵn node capacity trong cả ba nhánh để tách pod startup khỏi node provisioning. Cố định image digest, requests/limits, node, queue, database, workload, SQS trigger, Cron timezone/lịch và cửa sổ đo. Không tạo CPU-HPA độc lập cùng điều khiển worker với KEDA; Cron phải được thiết kế cùng ScaledObject thay vì tạo bộ điều khiển cạnh tranh.
 
+Khi E5 có script, chạy từ thư mục `experiments/E5`. Nếu tái sử dụng một lượt E2, chạy các lệnh E2 từ `experiments/E2`; hiện E5 chưa có script riêng.
+
 ## Thực hiện dự kiến
 
 1. Chuẩn bị cấu hình riêng và cách khôi phục; kiểm tra queue/DLQ, IAM và monitoring. Dừng nếu đã có autoscaler khác điều khiển Orders.

@@ -23,9 +23,11 @@ Giữ node phù hợp và đủ capacity cho max worker, ổn định trong lư�
 
 ## Chuẩn bị và cách chạy
 
+Vào thư mục E2 ở mỗi terminal trước khi chạy các lệnh trong runbook: `cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling/experiments/E2`.
+
 - Kiểm tra Orders API, worker, SQS, DB, IAM, monitoring và khả năng đối chiếu `jobId`; queue đã drain, kiểm tra visible/in-flight/delayed và DLQ. Không purge message ngoài kế hoạch.
 - Mở [run.sh](run.sh) và chạy **từng lệnh hoặc nhóm lệnh** trong Git Bash: chuẩn bị → bật KEDA → chờ worker về 0 → gửi first job → tạo tải → chờ drain và scale về 0 → khôi phục. Không chạy toàn bộ file; `exit 0` ở đầu ngăn chạy nhầm.
-- Script lưu Helm values và replica ban đầu trong `.generated/e2/`. Không ghi đè bản lưu, giữ cùng chart và chỉ xóa bản lưu sau khi xác nhận khôi phục. Dừng nếu gặp lỗi; `dbMode=light` ghi dữ liệu thử vào DB.
+- Script lưu Helm values và replica ban đầu trong `../../.generated/e2/`. Không ghi đè bản lưu, giữ cùng chart và chỉ xóa bản lưu sau khi xác nhận khôi phục. Dừng nếu gặp lỗi; `dbMode=light` ghi dữ liệu thử vào DB.
 - [keda.yaml](keda.yaml) là pilot: min 0/max 10, queue target 10, polling 30s và cooldown 300s; cần xác nhận thực tế. Workload Step dùng [workload.js của E1](../E1/workload.js) sau khi ghi nhận first job.
 - Ghi nhận producer được chấp nhận, `dropped_iterations`, errors, events/logs và metrics, kể cả khi worker biến mất. Lặp ít nhất **3 lượt hợp lệ**; k6 HTTP latency không phải completion latency.
 
