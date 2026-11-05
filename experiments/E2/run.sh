@@ -47,9 +47,10 @@ kubectl --context twolevel-dev -n retailstore get pods -o wide
 # Chỉ xem log sau khi worker đã được tạo; nếu chưa có pod, chờ và kiểm tra lại.
 kubectl --context twolevel-dev -n retailstore logs deployment/orders-worker --tail=100
 
-# Sau first job, tạo tải step; giữ nguyên profile giữa các lượt và đổi tên kết quả.
+# Sau first job, tạo Step version 3: 5 → 10 → 15 → 20 → 15 → 10 → 5/s,
+# mỗi bậc 2 phút. Chốt sau pilot; giữ nguyên cấu hình giữa các lượt.
 mkdir -p ./results
-k6 run -e PROFILE=step --summary-export ./results/e2-step-1.json ../E1/workload.js
+k6 run --summary-export ./results/e2-step-1.json ../E1/step.js
 # Ngừng gửi, theo dõi queue/desired/ready và chờ worker về 0; ghi mốc, retry/DLQ.
 kubectl --context twolevel-dev -n retailstore get deployment orders-worker
 kubectl --context twolevel-dev -n retailstore get hpa,scaledobjects,pods

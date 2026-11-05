@@ -28,7 +28,7 @@ Vào thư mục E2 ở mỗi terminal trước khi chạy các lệnh trong runb
 - Kiểm tra Orders API, worker, SQS, DB, IAM, monitoring và khả năng đối chiếu `jobId`; queue đã drain, kiểm tra visible/in-flight/delayed và DLQ. Không purge message ngoài kế hoạch.
 - Mở [run.sh](run.sh) và chạy **từng lệnh hoặc nhóm lệnh** trong Git Bash: chuẩn bị → bật KEDA → chờ worker về 0 → gửi first job → tạo tải → chờ drain và scale về 0 → khôi phục. Không chạy toàn bộ file; `exit 0` ở đầu ngăn chạy nhầm.
 - Script lưu Helm values và replica ban đầu trong `../../.generated/e2/`. Không ghi đè bản lưu, giữ cùng chart và chỉ xóa bản lưu sau khi xác nhận khôi phục. Dừng nếu gặp lỗi; `dbMode=light` ghi dữ liệu thử vào DB.
-- [keda.yaml](keda.yaml) là pilot: min 0/max 10, queue target 10, polling 30s và cooldown 300s; cần xác nhận thực tế. Workload Step dùng [workload.js của E1](../E1/workload.js) sau khi ghi nhận first job.
+- [keda.yaml](keda.yaml) là pilot: min 0/max 10, queue target 10, polling 30s và cooldown 300s; cần xác nhận thực tế. Sau khi ghi nhận first job, dùng Step version 3 của [step.js E1](../E1/step.js): 5 → 10 → 15 → 20 → 15 → 10 → 5 request/s, mỗi bậc 2 phút. Đây là tải pilot, kiểm tra có scale lên N > 1 và giữ nguyên giữa các lượt chính thức.
 - Ghi nhận producer được chấp nhận, `dropped_iterations`, errors, events/logs và metrics, kể cả khi worker biến mất. Lặp ít nhất **3 lượt hợp lệ**; k6 HTTP latency không phải completion latency.
 
 ## Cấu hình cần ghi lại
@@ -55,8 +55,7 @@ Vào thư mục E2 ở mỗi terminal trước khi chạy các lệnh trong runb
 |---|---|---|
 | Idle | Queue rỗng, worker về 0, xác nhận node sẵn sàng. | |
 | First job | Gửi một job có thể đối chiếu `jobId` và timestamp. | |
-| Tải tăng / burst | Tạo đủ backlog để quan sát scale-out, có thể lên N > 1. | |
-| Duy trì | Quan sát xử lý và biến động pod. | |
+| Step tăng / đỉnh / giảm | Giữ từng bậc, tạo backlog và quan sát scale-out rồi scale-in; tải đỉnh 20/s trong 2 phút. | 5 → 10 → 15 → 20 → 15 → 10 → 5/s; mỗi bậc 2 phút |
 | Dừng tải | Không gửi job mới; theo dõi drain và scale về 0. | |
 
 Chốt tốc độ gửi, thời lượng, tổng job, `workUnits`, `dbMode` và batch size sau pilot. Cần nhiều mẫu liên tiếp để đánh giá queue drain vì SQS metrics gần đúng; không chỉ dựa vào `visible=0`.

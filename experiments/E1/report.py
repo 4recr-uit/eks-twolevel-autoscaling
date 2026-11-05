@@ -84,6 +84,18 @@ def replica_minutes(series, start, end, step):
     return round((total + (end - previous_t) * previous_v) / 60, 2)
 
 
+def first_scale_after_high(values, start, end, profile, version):
+    if profile not in ("step", "burst"):
+        return None
+    offsets = {1: 60, 2: 180, 3: 360} if profile == "step" else {1: 60, 2: 60, 3: 60}
+    high_start = start + offsets[version]
+    before_high = [v for t, v in values if t <= high_start]
+    if not before_high:
+        return None
+    first = next((t for t, v in values if high_start <= t <= end and v > before_high[-1]), None)
+    return round(first - high_start, 1) if first is not None else None
+
+
 def summarize(directory, after=300):
     metadata = read_json(directory / "metadata.json")
     collection = read_json(directory / "collection.json")
@@ -95,7 +107,11 @@ def summarize(directory, after=300):
     actual_profile = profile_codes.get(k6["workload_profile_code"]["value"])
     if actual_profile != metadata.get("profile"):
         raise ValueError("PROFILE trong summary không khớp hồ sơ lượt chạy")
-    workload = {"low_request_per_second": k6["workload_low_rate"]["value"],
+    version = k6.get("workload_model_version", {}).get("value", 1)
+    if version not in (1, 2, 3):
+        raise ValueError("Phiên bản workload không được hỗ trợ")
+    workload = {"model_version": version,
+                "low_request_per_second": k6["workload_low_rate"]["value"],
                 "high_request_per_second": k6["workload_high_rate"]["value"],
                 "batch_size": k6["workload_batch_size"]["value"],
                 "work_units": k6["workload_work_units"]["value"],
@@ -173,12 +189,7 @@ def summarize(directory, after=300):
             first = next((t for t, v in values if start <= t <= end and v > initial[-1]), None)
             if first is not None:
                 first_scale = round(first - start, 1)
-        before_high = [v for t, v in values if t <= start + 60]
-        if before_high and metadata.get("profile") in ("step", "burst"):
-            high_start = start + 60
-            first = next((t for t, v in values if high_start <= t <= end and v > before_high[-1]), None)
-            if first is not None:
-                first_high_scale = round(first - high_start, 1)
+        first_high_scale = first_scale_after_high(values, start, end, metadata.get("profile"), version)
     pending = matrix(directory, "pending_pods")
     pending_values = [float(v) for item in pending for t, v in item.get("values", [])
                       if start <= float(t) <= end and math.isfinite(float(v))]

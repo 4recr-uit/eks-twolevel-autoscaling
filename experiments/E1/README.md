@@ -10,7 +10,7 @@ So sánh ba chiến lược trên cùng Orders worker, SQS queue và workload, v
 | CPU-HPA | min 1, max 10, CPU target 60% request | 1 desired/Ready, chỉ có `e1-orders-cpu` |
 | KEDA SQS | min 1, max 10, target 10 message/Pod, tính in-flight | 1 desired/Ready, chỉ có `e1-orders-sqs` và HPA do nó tạo |
 
-Workload pilot theo E0, với batch 1 và `LOW_RATE=5`, `HIGH_RATE=27` khi chạy [workload.js](workload.js): Steady 5 request/s × 2 phút; Step 5 × 1 phút → 27 × 2 phút → 5 × 1 phút; Burst 5 × 1 phút → 27 × 30 giây → 5 × 1 phút. K6 đo request/s; số task thực tế phải dựa vào accepted jobs. `WORK_UNITS=100` đã được người chạy xác nhận cho E0; giữ `DB_MODE=light`, `BATCH_SIZE=1` và cùng cấu hình giữa ba nhánh pilot. DB mode `light` ghi dữ liệu thử vào database.
+Workload pilot theo [E0](../E0/README.md): [Steady](stead.js) **5 request/s × 2 phút**; [Step](step.js) **5 → 10 → 15 → 20 → 15 → 10 → 5 request/s**, mỗi bậc 2 phút; [Burst](burst.js) **5/s × 1 phút → 40/s × 30 giây → 5/s × 1 phút**. Burst tạm chốt ở 40/s cho pilot và cần truyền `HIGH_RATE=40` khi chạy. Steady và Step version 3 được cố định trực tiếp trong file; Burst version 3 nhận `HIGH_RATE` lớn hơn 5 request/s. Step chuyển mức tức thời, giữ cố định từng bậc. K6 đo request/s; số task thực tế phải dựa vào accepted jobs. Giữ `WORK_UNITS=100`, `DB_MODE=light`, `BATCH_SIZE=1` và cùng cấu hình giữa ba nhánh pilot. DB mode `light` ghi dữ liệu thử vào database. Cả ba script dùng chung [workload-common.js](workload-common.js).
 
 Lưu ý khi pilot: ở E0, 5 request/s đã dùng trung bình khoảng 511m CPU trên một worker, tương đương gần 399% request 128m, cao hơn target HPA 60%. Vì vậy CPU-HPA có thể scale ngay trong pha tải thấp; ghi nhận diễn biến này, không giả định đến pha 27 request/s mới scale. CPU E0 là số đo của một lượt và còn phụ thuộc cấu hình workload thực tế.
 
@@ -54,11 +54,21 @@ Trong terminal khác, đặt cùng `RUN_DIR`, chạy k6 và lưu summary. Giữ 
 
 ```bash
 RUN_DIR=../results/E1/E1-fixed-step-r01
-k6 run -e PROFILE=step -e LOW_RATE=5 -e HIGH_RATE=27 -e WORK_UNITS=100 -e DB_MODE=light -e BATCH_SIZE=1 \
-  --summary-export "$RUN_DIR/raw/k6-summary.json" ./workload.js
+k6 run --summary-export "$RUN_DIR/raw/k6-summary.json" ./step.js
 ```
 
-Summary cũng lưu rate, batch size, work units, DB mode và profile thực tế; report từ chối nếu profile không khớp hồ sơ. K6 ghi mốc UTC vào console và summary (`workload_started_at_unix_ms`, `workload_finished_at_unix_ms`). Mốc kết thúc là sau các iteration đang chạy, không bao gồm drain; dừng cưỡng bức có thể không ghi được mốc này. Ghi các biến đã dùng vào `notes.md`.
+Steady dùng hồ sơ `--profile steady` và `./stead.js`. Step và Steady không nhận `LOW_RATE`/`HIGH_RATE`; không truyền `PROFILE` cho bất kỳ script nào. Burst dùng hồ sơ `--profile burst` và `./burst.js`; bắt buộc truyền `HIGH_RATE` là số nguyên lớn hơn 5, không truyền `LOW_RATE`. Các mặc định `WORK_UNITS=100`, `DB_MODE=light`, `BATCH_SIZE=1`, `VUS=50`, `BASE_URL=http://localhost:8082` được dùng nếu không truyền. Summary lưu phiên bản workload, rate, batch size, work units, DB mode và profile thực tế; report từ chối nếu profile không khớp hồ sơ. K6 ghi mốc UTC vào console và summary (`workload_started_at_unix_ms`, `workload_finished_at_unix_ms`). Mốc bắt đầu là setup, xấp xỉ lúc scenario bắt đầu; mốc kết thúc là sau các iteration đang chạy, không bao gồm drain. Ghi các biến và mốc pha thực tế vào `notes.md`; dừng cưỡng bức có thể không ghi được mốc kết thúc.
+
+Ví dụ cho hai profile còn lại, sau khi tạo hồ sơ và đặt `RUN_DIR` tương ứng:
+
+```bash
+k6 run --summary-export "$RUN_DIR/raw/k6-summary.json" ./stead.js
+# Pilot Burst, mức đỉnh tạm chốt 40/s:
+k6 run -e HIGH_RATE=40 \
+  --summary-export "$RUN_DIR/raw/k6-summary.json" ./burst.js
+```
+
+Chạy từng lệnh với hồ sơ riêng, không chạy cả hai vào cùng `RUN_DIR`.
 
 Sau khi k6 kết thúc, **tiếp tục thu ít nhất 300 giây** để mọi lượt có cùng cửa sổ so sánh tài nguyên. Đồng thời chờ queue drain: visible, in-flight, delayed đều 0 qua ít nhất ba mẫu liên tiếp, đối chiếu DLQ và task thành công. Nếu chưa drain sau 300 giây, tiếp tục thu đến khi drain; không purge. Sau đó nhấn Ctrl+C **một lần** ở collector và chờ ghi xong. Lập báo cáo:
 
@@ -72,13 +82,15 @@ python report.py --run-dir "$RUN_DIR"
 
 Mỗi hồ sơ ở `../results/E1/` gồm `metadata.json`, `notes.md`, `raw/k6-summary.json`, `collection.json`, `collection-summary.md`, các mẫu SQS/worker trong `metrics/` và `events/`, metric Prometheus theo thời gian trong `metrics/`, và `report.json`. Thư mục results bị Git bỏ qua; sao lưu riêng nếu cần. File `collect-errors.jsonl` chỉ xuất hiện khi có lỗi thu.
 
-Báo cáo có accepted jobs, throughput thành công trung bình trong lúc k6 phát tải, số task theo status, p50/p95/p99 E2E, peak visible + in-flight, thời gian xác nhận drain, ready Pod-minutes, CPU trung bình và thời điểm scale-out đầu tiên từ lúc bắt đầu, cũng như sau pha tải cao của Step/Burst. Giữ raw data để vẽ đồ thị và đối chiếu desired/ready, Pending và node. Report không tự chấm lượt hợp lệ.
+Báo cáo có accepted jobs, throughput thành công trung bình trong lúc k6 phát tải, số task theo status, p50/p95/p99 E2E, peak visible + in-flight, thời gian xác nhận drain, ready Pod-minutes, CPU trung bình và thời điểm scale-out đầu tiên từ lúc bắt đầu, cũng như sau đầu bậc cao nhất của Step/Burst. Mốc đỉnh ước lượng từ setup + 360 giây cho Step version 3, + 180 giây cho Step version 2, + 60 giây cho Burst và Step version 1; không phải timestamp thực đo của pha. So sánh thêm timeline từng bậc vì Step có thể scale trước đỉnh. Giữ raw data để vẽ đồ thị và đối chiếu desired/ready, Pending và node. Report không tự chấm lượt hợp lệ.
 
 - SQS counts và drain là xấp xỉ. Drain là mốc xác nhận sau **ba mẫu 0**, không phải thời điểm chính xác queue rỗng; queue rỗng không chứng minh mọi job đã thành công.
 - `completed_by_status_approx` và latency dùng cửa sổ cố định như Pod-minutes; nếu drain muộn hơn cửa sổ, dùng thêm `completed_by_status_through_drain_approx` để đối chiếu. Các bộ đếm này vẫn chỉ là ước lượng từ metric, không thay thế đối soát job ID.
 - Counter là chênh lệch các mẫu **nằm trong cửa sổ**; có thể thiếu đầu series, pod sống ngắn hoặc dữ liệu khi pod bị xóa. Histogram E2E của worker gồm cả error/duplicate; phân vị là ước lượng bucket, `null` khi thiếu dữ liệu hoặc vượt bucket hữu hạn. Không coi các giá trị này là đối soát job ID.
 - Kiểm tra `collection.json` và warnings, k6 failed/dropped iterations, success/error/duplicate, DLQ, target Prometheus, image, node, Pending và mức coverage trước khi kết luận. Nếu thiếu metric, queue chưa drain, node thay đổi hoặc workload không đạt, ghi nguyên nhân và đánh giá lại lượt; không thay giá trị thiếu bằng 0.
+- Với pilot, đề xuất không có dropped iteration hoặc request lỗi và số accepted đạt ít nhất 98% dự kiến ở từng pha; ngưỡng này là quy ước để thẩm định tải, không phải bảo đảm hệ thống. Summary k6 chỉ cho tổng cả lượt: cần xuất metrics theo thời gian hoặc dùng producer metrics và các mốc pha để kiểm tra từng pha. Nếu không đủ dữ liệu, ghi chưa xác minh; không suy từ tổng lượt. Kiểm tra producer, DB và node có chịu được mức Burst đã chọn trước khi chốt.
 - Chạy pilot trước để xác nhận tải phân biệt được các nhánh và giữ kết quả pilot riêng. Khi chốt cấu hình, chạy ít nhất **3 lượt hợp lệ cho mỗi strategy × profile**, cùng workload và cửa sổ. Step/Burst là chính; Steady làm tham chiếu. Tổng hợp trung vị, khoảng biến thiên, throughput, p95, peak backlog, drain và Pod-minutes.
+- Step version 1 là bước nhảy cũ, version 2 là bảy bậc × 1 phút, version 3 là bảy bậc × 2 phút như trên. Không gộp các version trong cùng phép so sánh. Report ghi version; summary cũ không có version được nhận là version 1. So sánh report đã tạo trước thay đổi cần kiểm tra version thủ công hoặc tạo lại từ raw data.
 
 Sau khi tự đánh giá lượt hợp lệ, có thể dùng [compare.py](compare.py) để in bảng trung vị và min–max của các lượt **cùng profile**. Truyền đường dẫn `report.json` của từng lượt được chọn; ví dụ với một lượt mỗi nhánh (lượt chính thức nên có ít nhất ba mỗi nhánh):
 
