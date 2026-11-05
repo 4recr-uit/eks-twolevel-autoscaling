@@ -36,7 +36,7 @@ kubectl --context twolevel-dev -n retailstore port-forward service/orders 8082:8
 Ví dụ Fixed + Step, lần 1. Đổi `--variant` thành `fixed`, `hpa` hoặc `keda`; `--profile` thành `steady`, `step` hoặc `burst`; tăng `--attempt` cho mỗi lượt. Lệnh tạo hồ sơ mới, từ chối ghi đè. Giá trị mặc định là context `twolevel-dev`, namespace `retailstore`, Deployment `orders-worker`, queue `orders-queue`, region `us-east-1`; xem `python init.py init --help` để đổi.
 
 ```bash
-python init.py init --variant fixed --profile step --attempt 1
+python init.py init --results-dir ../results/E1/E1-fixed-step-r01 --variant fixed --profile step --attempt 1
 RUN_DIR=../results/E1/E1-fixed-step-r01
 ```
 
