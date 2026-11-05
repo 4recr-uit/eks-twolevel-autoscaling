@@ -67,10 +67,10 @@ E1            ──► E7 (Queue target)
 |Dạng|Mô tả|Dùng để đánh giá|
 |---|---|---|
 |**Steady**|Tải duy trì ổn định|Throughput, latency, resource efficiency ở trạng thái ổn định|
-|**Step**|Tải chuyển từ thấp lên cao rồi giữ nguyên|Tốc độ phát hiện và phản ứng, backlog growth, recovery|
+|**Step**|Tải tăng rồi giảm theo nhiều bậc, giữ cố định ở từng bậc|Phản ứng và backlog theo từng mức, scale-in và recovery|
 |**Burst**|Tải tăng rất cao trong thời gian ngắn rồi giảm|Peak backlog, tail latency, phản ứng autoscaling|
 
-Mức tải được mô tả theo `μ` (ví dụ `5μ`, `10μ`). Khung thời gian chung có thể dùng 5 pha: Idle → Low → Burst → Sustained → Stop.
+Mức tải được mô tả theo `μ`; xem [E0](E0/README.md) để biết lịch pilot và điều kiện đo. Idle, phát tải và drain được xác định riêng theo mục tiêu từng thí nghiệm.
 
 | Mục              | Nội dung                                                                                                                                             |
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |

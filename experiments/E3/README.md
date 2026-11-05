@@ -23,7 +23,7 @@ E3 tương ứng **E3 của NT533** và **KS3 của NT531**. So sánh **warm nod
 - [karpenter-values.yaml](karpenter-values.yaml): overlay cho chart platform, tạo NodePool/EC2NodeClass riêng `e3-orders`; mặc định On-Demand `c7i-flex.large`, giới hạn 8 CPU/16 GiB và không consolidate. Xác nhận AMI, quota, subnet, instance/AZ và chi phí trước khi dùng.
 - [warm-capacity.yaml](warm-capacity.yaml): 10 pod giữ chỗ tạm với requests như Orders worker, giúp tạo node sẵn cho nhánh warm; cần xác nhận chúng Ready và node còn ổn định sau khi gỡ.
 - [run.sh](run.sh): trong mỗi terminal, trước tiên chạy `cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling/experiments/E3`; các lệnh Bash riêng biệt cho chuẩn bị, warm/elastic, KEDA, tạo tải và khôi phục. **Mở file và chạy từng lệnh**, chọn một nhánh cho mỗi lượt; dòng `exit 0` ngăn chạy cả file, không copy dòng đó vào terminal.
-- Workload Step dùng lại [workload.js của E1](../E1/workload.js); hiệu chỉnh pilot để nhánh elastic thực sự phát sinh pod Pending do thiếu capacity và node mới.
+- Workload Step version 3 dùng lại [step.js của E1](../E1/step.js): pilot 5 → 10 → 15 → 20 → 15 → 10 → 5 request/s, mỗi bậc 2 phút. Kiểm tra pilot để nhánh elastic thực sự phát sinh pod Pending do thiếu capacity và node mới. Nếu tải này chưa đủ, thiết kế lịch riêng, version và cách báo cáo trước khi chốt; giữ workload giống nhau trong hai nhánh.
 
 Nhánh warm tạo node trước bằng pod giữ chỗ rồi xóa các pod đó; nhánh elastic bắt đầu với NodePool riêng chưa có node dư và một worker ban đầu. Sau một nhánh, khôi phục Orders, gỡ release NodePool E3 và xác nhận node/NodeClaim/EC2 E3 đã thu hồi trước khi thiết lập nhánh còn lại. Giữ baseline `../../.generated/e3/` cho đến khi xong cả hai nhánh; values đã lưu có thể nhạy cảm.
 

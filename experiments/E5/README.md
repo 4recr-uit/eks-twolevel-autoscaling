@@ -24,6 +24,8 @@ Khi E5 có script, chạy từ thư mục `experiments/E5`. Nếu tái sử dụ
 4. Dừng tải, theo dõi queue drain và worker; lưu logs/events, SQS, Prometheus và kết quả producer. Lặp ít nhất 3 lượt hợp lệ mỗi nhánh.
 5. Khôi phục cấu hình và số replica ban đầu, xác nhận không còn tài nguyên thí nghiệm ngoài ý muốn.
 
+Nếu dùng Step sau first job, chọn và ghi phiên bản cùng rate như [E0](../E0/README.md), chốt sau pilot và giữ giống nhau giữa các nhánh. First job được đo riêng; Step version 3 không thay thế giai đoạn idle hoặc phép đo first-job latency. Không trộn lượt E2 dùng profile cũ và mới.
+
 ## Chỉ số và kết quả
 
 Đo first-job completion latency, p95/p99 completion latency ở giai đoạn đầu, peak backlog, throughput, pod Ready, Pod-minutes idle và chi phí compute ước tính. Nêu nguồn và độ phân giải timestamp; ghi `N/A` nếu thiếu mốc. Histogram percentiles là ước lượng và có thể thiếu chính xác khi số mẫu nhỏ.

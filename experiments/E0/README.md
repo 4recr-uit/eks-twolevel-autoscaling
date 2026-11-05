@@ -94,12 +94,29 @@ Trong phiên thu 8–15 request/s, counter published và success đều tăng 11
 
 ## Workload modeling cho E1
 
-Với μ ≈ 8,9 task/s, đề xuất bộ tải **pilot** sau; cùng profile và thông số được dùng cho Fixed, CPU-HPA và KEDA. Chọn `batchSize=1` và kiểm tra job thực tế được chấp nhận để đối chiếu request/s với task/s. Đây là thiết kế mới dựa trên E0, không phải kết quả đã đo của E1.
+Với μ sơ bộ ≈ 8,9 task/s/worker, bộ tải sau dùng cho **pilot E1**. Giữ cùng profile và thông số giữa Fixed, CPU-HPA và KEDA; `batchSize=1`, `workUnits=100`, `dbMode=light` theo E0. Rate là request/s đặt cho k6; đối chiếu accepted jobs để biết task thực tế. `dbMode=light` ghi dữ liệu thử vào database.
 
-| Profile | Các pha phát tải đề xuất | Mục đích |
-|---|---|---|
-| Steady | 5 request/s trong 2 phút | Tham chiếu tải ổn định, khoảng 0,56μ. |
-| Step | 5 request/s trong 1 phút → 27 request/s trong 2 phút → 5 request/s trong 1 phút | Tải cao khoảng 3,03μ; quan sát scale và xử lý backlog khi tải duy trì. |
-| Burst | 5 request/s trong 1 phút → 27 request/s trong 30 giây → 5 request/s trong 1 phút | Quan sát phản ứng với tải cao ngắn hạn và quá trình phục hồi. |
+| Profile | Lịch phát tải | Tổng thời gian / request dự kiến | Script |
+|---|---|---|---|
+| Steady | 5/s trong 2 phút | 2 phút / 600 | [stead.js](../E1/stead.js) |
+| Step | 5 → 10 → 15 → 20 → 15 → 10 → 5/s, mỗi bậc 2 phút | 14 phút / 9.600 | [step.js](../E1/step.js) |
+| Burst | 5/s trong 1 phút → **40/s** trong 30 giây → 5/s trong 1 phút | 2 phút 30 giây / 1.800 | [burst.js](../E1/burst.js) |
 
-Sau mỗi profile, dừng gửi và tiếp tục đo đến khi queue drain theo tiêu chí đã chốt. Tải 27 task/s tương ứng khoảng `ceil(27 / 8,9) = 4` worker nếu năng lực scale tuyến tính; hai worker Fixed ước tính xử lý 17,8 task/s. Đây chỉ là dự báo ban đầu, không phải số replica do HPA/KEDA bảo đảm. Cần pilot để xác nhận workload đủ phân biệt các phương án, và chốt lại trước các lượt chính thức. Truyền `LOW_RATE=5` và `HIGH_RATE=27` khi chạy [workload.js E1](../E1/workload.js); mặc định của script vẫn là 1/5 request/s để tương thích các kịch bản khác.
+Steady và Step cố định lịch trong file, không truyền `LOW_RATE`, `HIGH_RATE` hay `PROFILE`. Step chuyển bậc tức thời và giữ mỗi mức cố định; đây là staircase, không phải ramp tuyến tính. Burst cố định baseline và thời lượng; mức đỉnh **tạm chốt cho pilot là 40/s**, nhưng script vẫn yêu cầu truyền `HIGH_RATE` là số nguyên lớn hơn 5. Từ thư mục E1: `k6 run -e HIGH_RATE=40 ./burst.js`. Ghi mức đỉnh thực tế trong mỗi lượt.
+
+Với μ hiện có, các mức Step tương ứng khoảng 0,56; 1,12; 1,69; 2,25 μ. Nếu hai worker Fixed có capacity tuyến tính 17,8 task/s, bậc 20/s vượt khoảng 2,2 task/s, tương đương 264 task trong 2 phút. Đây là phép tính thăm dò, không phải dự đoán backlog: μ chưa được xác nhận bằng ba lượt độc lập, nhiều worker và database có thể không scale tuyến tính. Vì mức đỉnh chỉ cao hơn capacity ước tính một ít, cần pilot xác nhận nó đủ tạo khác biệt giữa các chiến lược.
+
+### Cách đánh giá Step
+
+Hai phút mỗi bậc là thời lượng được chọn, không bảo đảm trạng thái ổn định. Kiểm tra chu kỳ metrics, thời gian worker Ready, backlog và biến động replica; ghi rõ nếu bậc kết thúc trước khi ổn định. Bậc cuối 5/s kéo dài 2 phút, nên tiếp tục thu sau khi dừng tải để đo drain và scale-in. Giữ lịch và cửa sổ đo cố định giữa các nhánh.
+
+- Các mức được chọn quanh capacity ước tính: 5/s là baseline, 10/s vượt μ một worker và 20/s cao hơn 2μ. Nếu có trace lưu lượng thật, đối chiếu phân phối và tốc độ thực tế; khi không có trace, ghi rõ đây là workload tổng hợp.
+- Mỗi bậc đánh giá cả chuyển tiếp và cuối bậc: accepted rate, throughput thành công, backlog/queue age, E2E latency, desired/ready, CPU và lỗi. Với latency theo bậc, ưu tiên nhóm job theo thời điểm enqueue rồi theo dõi đến hoàn thành; ghi rõ nếu chỉ có histogram theo thời điểm hoàn thành, hoặc không đủ dữ liệu. Pha giảm có thể vẫn xử lý backlog tích lũy, nên không coi cùng rate tăng và giảm là cùng trạng thái; so sánh thêm queue đầu pha.
+- Ghi riêng các mốc pha, chất lượng dữ liệu và actual rate theo thời gian. Tổng summary không chứng minh từng bậc đạt tải; phân vị toàn lượt không thay được latency từng bậc. Pilot để xác định VU đủ, producer/DB không trở thành nút thắt và workload thực sự phân biệt các nhánh; cân nhắc chi phí và số job tăng theo thời lượng.
+- Giữ chung workload, cấu hình worker và cửa sổ phân tích; lặp ít nhất 3 lượt hợp lệ theo thứ tự xen kẽ giữa các chiến lược, đối chiếu job, retry và DLQ. Ghi rõ trạng thái đầu, đặc biệt HPA có thể scale ở 5/s. Nếu điều chỉnh lịch, cần sửa script, tăng version workload và cập nhật mốc đỉnh/so sánh trong `report.py` trước khi dùng.
+
+### Đánh giá Burst pilot
+
+Burst 40/s tương đương khoảng 4,49μ. Với capacity Fixed giả định 17,8 task/s, lượng việc vượt capacity trong pha đỉnh khoảng `(40 − 17,8) × 30 = 666` task; đây không phải peak backlog thực đo. Sau pha đỉnh trở về 5/s, rồi dừng và tiếp tục quan sát drain. Pilot cần xác nhận producer/DB chịu được tải, kiểm tra accepted rate, dropped iterations, lỗi và thời gian phục hồi; không suy ra hiệu quả autoscaler từ rate đặt. Giữ 40/s giữa các nhánh trong phép so sánh; nếu khảo sát mức hoặc thời lượng khác, ghi riêng và không gộp với lượt chính.
+
+Tài liệu tham khảo: [k6 về thiết kế load profile](https://grafana.com/docs/learning-hub/k6-performance-testing/03-establishing-a-baseline/17-designing-load-profile/), [k6 về arrival-rate executor](https://grafana.com/docs/k6/latest/using-k6/scenarios/executors/ramping-arrival-rate/), [Kubernetes HPA](https://kubernetes.io/docs/concepts/workloads/autoscaling/horizontal-pod-autoscale/), [KEDA FAQ 2.21](https://keda.sh/docs/2.21/reference/faq/).

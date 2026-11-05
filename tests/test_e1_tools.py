@@ -118,6 +118,14 @@ class E1PreflightTests(unittest.TestCase):
 
 
 class E1ReportTests(unittest.TestCase):
+    def test_scale_after_peak_uses_profile_version(self):
+        values = [(100, 1), (165, 2), (270, 3), (285, 4), (465, 5)]
+        self.assertEqual(report.first_scale_after_high(values, 100, 400, "step", 1), 5)
+        self.assertEqual(report.first_scale_after_high(values, 100, 400, "step", 2), 5)
+        self.assertEqual(report.first_scale_after_high(values, 100, 400, "burst", 2), 5)
+        self.assertEqual(report.first_scale_after_high(values, 100, 500, "step", 3), 5)
+        self.assertIsNone(report.first_scale_after_high(values, 100, 400, "steady", 2))
+
     def test_compare_rejects_mismatched_workload(self):
         base = {"run_id": "a", "variant": "fixed", "profile": "step", "workload": {"low": 5},
                 "resource_window_after_workload_seconds": 300}
@@ -126,6 +134,9 @@ class E1ReportTests(unittest.TestCase):
             comparison.compare([base, other])
         other["workload"] = {"low": 5}
         self.assertIn("| hpa | 1 |", comparison.compare([base, other]))
+        other["workload"] = {"low": 5, "model_version": 2}
+        with self.assertRaisesRegex(ValueError, "cùng profile"):
+            comparison.compare([base, other])
 
     def test_counter_reset_and_quantile(self):
         series = {"values": [[10, "5"], [15, "10"], [20, "2"], [25, "6"]]}

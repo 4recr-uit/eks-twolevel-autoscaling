@@ -27,7 +27,7 @@ class ExperimentWorkdirTests(unittest.TestCase):
     def test_reused_workloads_and_e3_charts_resolve(self):
         for scenario in ("E2", "E3", "E4"):
             directory = ROOT / "experiments" / scenario
-            self.assertTrue((directory / "../E1/workload.js").is_file())
+            self.assertTrue((directory / "../E1/step.js").is_file())
         for scenario in ("E3", "E4"):
             directory = ROOT / "experiments" / scenario
             self.assertTrue((directory / "../../kubernetes/charts/platform-config/Chart.yaml").is_file())

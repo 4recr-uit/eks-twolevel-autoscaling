@@ -81,8 +81,8 @@ kubectl --context twolevel-dev -n retailstore port-forward service/orders 8082:8
 # Terminal khác: chạy profile giống nhau cho 2 nhánh, đổi tên từng lượt.
 # Terminal này cần đang ở thư mục experiments/E4.
 mkdir -p ./results
-k6 run -e PROFILE=step --summary-export ./results/warm-step-1.json ../E1/workload.js
-k6 run -e PROFILE=step --summary-export ./results/elastic-step-1.json ../E1/workload.js
+k6 run --summary-export ./results/warm-step-1.json ../E1/step.js
+k6 run --summary-export ./results/elastic-step-1.json ../E1/step.js
 # Chỉ chạy lệnh tương ứng nhánh đã chuẩn bị. Theo dõi queue, pod Pending, node,
 # NodeClaim, events, throughput và thời gian. Nếu không có Pending do thiếu
 # capacity hoặc không tạo node ở nhánh elastic, điều chỉnh pilot và đo lại.
