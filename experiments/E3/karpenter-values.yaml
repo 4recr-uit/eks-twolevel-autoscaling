@@ -5,8 +5,8 @@ nodePool:
   name: e3-orders
   instanceTypes: [c7i-flex.large]
   capacityTypes: [on-demand]
-  cpuLimit: "8"
-  memoryLimit: 16Gi
+  cpuLimit: "12"
+  memoryLimit: 24Gi
   consolidateAfter: Never
 kedaAuthentication:
   enabled: false

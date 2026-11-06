@@ -1,0 +1,27 @@
+# Anchor node worker trong nhánh giữ node; giữ chạy suốt lượt.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: e5-node-anchor
+  namespace: retailstore
+  labels:
+    experiments.retailstore.dev/owner: e5
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: e5-node-anchor
+  template:
+    metadata:
+      labels:
+        app: e5-node-anchor
+    spec:
+      nodeSelector:
+        karpenter.sh/nodepool: e5-orders
+      containers:
+        - name: reserve
+          image: registry.k8s.io/pause:3.9
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi

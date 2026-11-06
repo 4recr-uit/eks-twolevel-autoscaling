@@ -72,6 +72,8 @@ def git_snapshot(repo_root):
 
 
 def init_run(args, *, repo_root=REPO_ROOT):
+    if args.scenario == "E1" and args.variant not in ("hpa", "keda"):
+        raise ValueError("E1 chỉ hỗ trợ variant hpa hoặc keda")
     run_id = f"{args.scenario}-{args.variant}-{args.profile}-r{args.attempt:02d}"
     scenario_dir = args.results_dir / args.scenario
     run_dir = scenario_dir / run_id

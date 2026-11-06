@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RESULTS = REPO_ROOT / "experiments" / "results"
 TOKEN = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?\Z")
 KUBE_NAME = re.compile(r"[a-z0-9](?:[-a-z0-9.]{0,251}[a-z0-9])?\Z")
@@ -72,6 +72,8 @@ def git_snapshot(repo_root):
 
 
 def init_run(args, *, repo_root=REPO_ROOT):
+    if args.scenario != "E1" or args.variant not in ("hpa", "keda"):
+        raise ValueError("E1 chỉ hỗ trợ variant hpa hoặc keda")
     run_id = f"{args.scenario}-{args.variant}-{args.profile}-r{args.attempt:02d}"
     scenario_dir = args.results_dir / args.scenario
     run_dir = scenario_dir / run_id
@@ -165,7 +167,7 @@ def parser():
     sub = result.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
     init.add_argument("--scenario", default="E1", choices=["E1"])
-    init.add_argument("--variant", required=True, choices=("fixed", "hpa", "keda"))
+    init.add_argument("--variant", required=True, choices=("hpa", "keda"))
     init.add_argument("--profile", required=True, choices=("steady", "step", "burst"))
     init.add_argument("--attempt", required=True, type=attempt)
     init.add_argument("--context", default="twolevel-dev", type=nonempty)

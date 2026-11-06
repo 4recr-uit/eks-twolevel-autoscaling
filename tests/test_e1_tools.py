@@ -19,9 +19,10 @@ def load(name, path):
     return module
 
 
-collect = load("e1_collect", "experiments/E1/collect.py")
-report = load("e1_report", "experiments/E1/report.py")
-comparison = load("e1_compare", "experiments/E1/compare.py")
+collect = load("e1_collect", "experiments/E3/history/collect.py")
+initializer = load("e1_init", "experiments/E3/history/init.py")
+report = load("e1_report", "experiments/E3/history/report.py")
+comparison = load("e1_compare", "experiments/E3/history/compare.py")
 
 
 class FakeSource:
@@ -33,12 +34,12 @@ class FakeSource:
         self.queue_url = "https://example/orders-queue"
 
     def worker(self):
-        count = 2 if self.variant == "fixed" else 1
+        count = 1
         return {"desired": count, "ready": count, "pods": [
             {"containers": [{"ready": True, "imageID": "sha256:image"}]} for _ in range(count)]}
 
     def controllers(self):
-        return {"fixed": [], "hpa": ["hpa/e1-orders-cpu"],
+        return {"hpa": ["hpa/e1-orders-cpu"],
                 "keda": ["hpa/e1-orders-keda-hpa", "scaledobjects.keda.sh/e1-orders-sqs"]}[self.variant]
 
     def queue(self, name):
@@ -65,7 +66,7 @@ class FakeSource:
                     "name": "cpu", "target": {"type": "Utilization", "averageUtilization": 60}}}]}}
 
     def prom(self, *_args, **_kwargs):
-        n = 2 if self.variant == "fixed" else 1
+        n = 1
         return {"data": {"result": [{"value": [1, "1"]} for _ in range(n)]}}
 
     def nodes(self):
@@ -74,7 +75,7 @@ class FakeSource:
 
 class E1PreflightTests(unittest.TestCase):
     def test_variants_require_expected_controllers_and_queue(self):
-        for variant in ("fixed", "hpa", "keda"):
+        for variant in ("hpa", "keda"):
             with self.subTest(variant=variant):
                 src = FakeSource(variant)
                 self.assertEqual(collect.preflight(src, variant)["variant"], variant)
@@ -83,10 +84,22 @@ class E1PreflightTests(unittest.TestCase):
                     collect.preflight(src, variant)
 
     def test_wrong_controller_is_rejected(self):
-        src = FakeSource("fixed")
+        src = FakeSource("hpa")
         src.controllers = lambda: ["hpa/external"]
         with self.assertRaisesRegex(ValueError, "Autoscaler"):
-            collect.preflight(src, "fixed")
+            collect.preflight(src, "hpa")
+
+    def test_supported_variants_are_hpa_and_keda(self):
+        parser = initializer.parser()
+        for variant in ("hpa", "keda"):
+            args = parser.parse_args(["init", "--variant", variant, "--profile", "step", "--attempt", "1"])
+            self.assertEqual(args.variant, variant)
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            parser.parse_args(["init", "--variant", "fixed", "--profile", "step", "--attempt", "1"])
+        with self.assertRaisesRegex(ValueError, "hpa hoặc keda"):
+            initializer.init_run(argparse.Namespace(scenario="E1", variant="fixed"))
+        with self.assertRaisesRegex(ValueError, "hpa hoặc keda"):
+            collect.preflight(FakeSource("hpa"), "fixed")
 
     def test_collector_preserves_results_during_scaling(self):
         src = FakeSource("hpa")
@@ -122,18 +135,26 @@ class E1ReportTests(unittest.TestCase):
         values = [(100, 1), (165, 2), (270, 3), (285, 4), (465, 5)]
         self.assertEqual(report.first_scale_after_high(values, 100, 400, "step", 1), 5)
         self.assertEqual(report.first_scale_after_high(values, 100, 400, "step", 2), 5)
+        self.assertEqual(report.first_scale_after_high(values, 100, 400, "step", 4), 5)
         self.assertEqual(report.first_scale_after_high(values, 100, 400, "burst", 2), 5)
         self.assertEqual(report.first_scale_after_high(values, 100, 500, "step", 3), 5)
         self.assertIsNone(report.first_scale_after_high(values, 100, 400, "steady", 2))
 
     def test_compare_rejects_mismatched_workload(self):
-        base = {"run_id": "a", "variant": "fixed", "profile": "step", "workload": {"low": 5},
+        base = {"run_id": "a", "variant": "keda", "profile": "step", "workload": {"low": 5},
                 "resource_window_after_workload_seconds": 300}
         other = {**base, "run_id": "b", "variant": "hpa", "workload": {"low": 6}}
         with self.assertRaisesRegex(ValueError, "cùng profile"):
             comparison.compare([base, other])
+        base["workload"] = {"low": 5, "model_version": 3}
+        other["workload"] = {"low": 5, "model_version": 4}
+        with self.assertRaisesRegex(ValueError, "cùng profile"):
+            comparison.compare([base, other])
+        base["workload"] = {"low": 5}
         other["workload"] = {"low": 5}
         self.assertIn("| hpa | 1 |", comparison.compare([base, other]))
+        with self.assertRaisesRegex(ValueError, "Variant"):
+            comparison.compare([{**base, "variant": "fixed"}])
         other["workload"] = {"low": 5, "model_version": 2}
         with self.assertRaisesRegex(ValueError, "cùng profile"):
             comparison.compare([base, other])
@@ -150,13 +171,13 @@ class E1ReportTests(unittest.TestCase):
         self.assertEqual(report.replica_minutes(points, 0, 15, 5), 0.58)
         self.assertIsNone(report.replica_minutes(points, 0, 40, 5))
 
-    def test_report_drain_and_fixed_window(self):
+    def test_report_drain_and_resource_window(self):
         with tempfile.TemporaryDirectory() as root:
             path = Path(root)
             (path / "raw").mkdir(); (path / "metrics").mkdir()
             def save(name, obj):
                 (path / name).write_text(json.dumps(obj), encoding="utf-8")
-            save("metadata.json", {"scenario": "E1", "variant": "fixed", "profile": "steady", "run_id": "r01"})
+            save("metadata.json", {"scenario": "E1", "variant": "hpa", "profile": "steady", "run_id": "r01"})
             save("collection.json", {"status": "finished", "started_at_utc": "1970-01-01T00:01:30Z", "ended_at_utc": "1970-01-01T00:02:20Z", "warnings": [],
                                       "prometheus_export_step_seconds": 5, "requested_interval_seconds": 5})
             save("raw/k6-summary.json", {"metrics": {"workload_started_at_unix_ms": {"value": 100000},
@@ -182,6 +203,17 @@ class E1ReportTests(unittest.TestCase):
             self.assertEqual(result["peak_visible_plus_inflight_approx"], 4)
             self.assertEqual(result["drain_confirmation_seconds_approx"], 15)
             self.assertEqual(result["ready_pod_minutes_approx"], 1)
+            metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+            summary = json.loads((path / "raw/k6-summary.json").read_text(encoding="utf-8"))
+            save("metadata.json", {**metadata, "variant": "fixed"})
+            with self.assertRaisesRegex(ValueError, "hpa hoặc keda"):
+                report.summarize(path, after=20)
+            metadata["profile"] = "step"
+            summary["metrics"]["workload_profile_code"]["value"] = 1
+            summary["metrics"]["workload_model_version"] = {"value": 4}
+            save("metadata.json", metadata)
+            save("raw/k6-summary.json", summary)
+            self.assertEqual(report.summarize(path, after=20)["workload"]["model_version"], 4)
             with self.assertRaisesRegex(ValueError, "đủ thời gian"):
                 report.summarize(path, after=60)
 

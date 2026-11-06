@@ -26,7 +26,7 @@ override.tf.json
 # Load Testing & Experiment Results (k6)
 results/raw/
 /experiments/results/
-/experiments/_shared/config.local.sh
+/experiments/E*/config.local.sh
 *.csv
 *.json
 *.log

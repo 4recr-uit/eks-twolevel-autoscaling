@@ -1,37 +1,52 @@
-"""Check experiment runbook paths from their own working directories."""
-
+"""Each experiment can use its own files from its own working directory."""
 from pathlib import Path
-import re
 import unittest
 
-
 ROOT = Path(__file__).resolve().parents[1]
+EXPERIMENTS = ROOT / "experiments"
 
 
 class ExperimentWorkdirTests(unittest.TestCase):
-    def test_runbook_paths_and_backup_locations(self):
-        for scenario in ("E0", "E1", "E2", "E3", "E4"):
-            with self.subTest(scenario=scenario):
-                directory = ROOT / "experiments" / scenario
-                text = (directory / "run.sh").read_text(encoding="utf-8")
-                self.assertNotIn("cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling\n", text)
-                self.assertTrue((directory / "../../../retailstore-backend-microservices/src/orders/chart").is_dir())
-                expected_backup = ROOT / ".generated" / ("e3" if scenario == "E4" else scenario.lower())
-                for path in set(re.findall(r"(?:\.\./)+\.generated/e[0-9]", text)):
-                    self.assertEqual((directory / path).resolve(), expected_backup.resolve())
-                self.assertIn("../../.generated/" + ("e3" if scenario == "E4" else scenario.lower()), text)
-                for path in re.findall(r"(?:-f|apply -f)\s+((?:\.{1,2}/)[^\s]+\.yaml)", text):
-                    if ".generated/" not in path:
-                        self.assertTrue((directory / path).is_file(), f"{scenario}: {path}")
+    def test_scenarios_have_local_tools_and_configuration(self):
+        expected = {
+            "E0": ("run.py", "run.sh", "collect.py", "report.py", "workload.js", "fixed-values.yaml"),
+            "E1": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda.yaml", "karpenter-values.yaml"),
+            "E2": ("run.py", "run.sh", "collect.py", "report.py", "timeline.py", "keda.yaml", "karpenter-values.yaml"),
+            "E3": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "hpa.yaml", "keda.yaml"),
+            "E4": ("run.py", "run.sh", "collect.py", "report.py", "first_job.py", "keda.yaml"),
+            "E5": ("run.py", "run.sh", "collect.py", "report.py", "first_job.py", "keda-cold.yaml", "keda-warm-1.yaml", "keda-warm-2.yaml"),
+            "E6": ("cost.py", "input.example.txt"),
+            "E7": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda-low.yaml", "keda-medium.yaml", "keda-high.yaml"),
+            "E8": ("run.py", "run.sh", "collect.py", "report.py", "mark.py", "recovery.py", "keda.yaml"),
+        }
+        for scenario, names in expected.items():
+            self.assertTrue((EXPERIMENTS / scenario / "README.md").is_file())
+            for name in names:
+                with self.subTest(scenario=scenario, name=name):
+                    self.assertTrue((EXPERIMENTS / scenario / name).is_file())
 
-    def test_reused_workloads_and_e3_charts_resolve(self):
-        for scenario in ("E2", "E3", "E4"):
-            directory = ROOT / "experiments" / scenario
-            self.assertTrue((directory / "../E1/step.js").is_file())
-        for scenario in ("E3", "E4"):
-            directory = ROOT / "experiments" / scenario
-            self.assertTrue((directory / "../../kubernetes/charts/platform-config/Chart.yaml").is_file())
-            self.assertTrue((directory / "../../kubernetes/environments/dev/platform.yaml").is_file())
+    def test_profile_copies_match_e0_model(self):
+        for name in ("stead.js", "step.js", "burst.js", "workload-common.js"):
+            reference = (EXPERIMENTS / "E0" / name).read_text(encoding="utf-8")
+            for scenario in ("E1", "E2", "E3", "E4", "E5", "E7", "E8"):
+                with self.subTest(scenario=scenario, name=name):
+                    content = (EXPERIMENTS / scenario / name).read_text(encoding="utf-8")
+                    if name == "workload-common.js":
+                        content = content.replace(scenario.lower() + "_accepted_jobs", "e1_accepted_jobs")
+                        content = content.replace(scenario.lower() + "_failed_requests", "e1_failed_requests")
+                        content = content.replace("test-" + scenario.lower(), "test-e1")
+                    self.assertEqual(reference, content)
+
+    def test_scenario_code_does_not_import_removed_common_directories(self):
+        for scenario in ("E0", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"):
+            for path in (EXPERIMENTS / scenario).glob("*"):
+                if path.is_file() and path.suffix in (".py", ".sh", ".js", ".md"):
+                    text = path.read_text(encoding="utf-8")
+                    with self.subTest(scenario=scenario, path=path.name):
+                        self.assertNotIn("../_shared/", text)
+                        self.assertNotIn("../workloads/", text)
+        self.assertFalse((EXPERIMENTS / "_shared").exists())
+        self.assertFalse((EXPERIMENTS / "workloads").exists())
 
 
 if __name__ == "__main__":

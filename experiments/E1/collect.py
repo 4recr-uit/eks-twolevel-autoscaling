@@ -45,7 +45,7 @@ def load_run(directory):
     if not isinstance(metadata, dict):
         raise ValueError("metadata.json phải là JSON object")
     if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E1":
-        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E1 schema_version=1 do init.py tạo.")
+        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E1 schema_version=1 do run.py init tạo.")
     target = metadata.get("target", {})
     if not isinstance(target, dict) or not isinstance(metadata.get("run_id"), str) or not metadata["run_id"]:
         raise ValueError("metadata thiếu run_id hoặc target hợp lệ")
@@ -157,6 +157,9 @@ class Source:
 
     def nodes(self):
         return [{"name": n["metadata"]["name"], "uid": n["metadata"]["uid"],
+                 "created_at": n["metadata"].get("creationTimestamp"),
+                 "deleting_at": n["metadata"].get("deletionTimestamp"),
+                 "provider_id": n.get("spec", {}).get("providerID"),
                  "labels": {k: v for k, v in n["metadata"].get("labels", {}).items()
                             if k in ("role", "node.kubernetes.io/instance-type", "topology.kubernetes.io/zone", "karpenter.sh/nodepool")},
                  "allocatable": n.get("status", {}).get("allocatable", {}),
@@ -185,36 +188,26 @@ def queries(target):
 
 def preflight(source, variant):
     expected = {
-        "fixed": set(),
-        "hpa": {"hpa/e1-orders-cpu"},
         "keda": {"hpa/e1-orders-keda-hpa", "scaledobjects.keda.sh/e1-orders-sqs"},
     }
-    if variant not in expected:
-        raise ValueError("Variant E1 phải là fixed, hpa hoặc keda")
+    if variant not in ("warm", "elastic"):
+        raise ValueError("Variant E1 phải là warm hoặc elastic")
+    controller_variant = "keda"
     worker = source.worker()
-    replicas = 2 if variant == "fixed" else 1
+    replicas = 1
     if worker["desired"] != replicas or worker["ready"] != replicas:
         raise ValueError(f"E1 {variant} cần {replicas} worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
             not p["containers"] or any(not c["ready"] or not c["imageID"] for c in p["containers"])
             for p in worker["pods"]):
         raise ValueError("Chờ worker Ready và có image digest trước khi thu")
+    if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e1-orders":
+        raise ValueError("Worker chưa chọn NodePool e1-orders")
     controllers = source.controllers()
-    if set(controllers) != expected[variant]:
+    if set(controllers) != expected[controller_variant]:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
     ns = source.target["namespace"]
-    if variant == "hpa":
-        hpa = source.kube("-n", ns, "get", "hpa", "e1-orders-cpu")
-        spec = hpa["spec"]
-        metrics = spec.get("metrics", [])
-        if (hpa["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e1"
-                or spec.get("minReplicas", 1) != 1 or spec.get("maxReplicas") != 10
-                or len(metrics) != 1 or metrics[0].get("type") != "Resource"
-                or metrics[0].get("resource", {}).get("name") != "cpu"
-                or metrics[0].get("resource", {}).get("target", {}).get("type") != "Utilization"
-                or metrics[0].get("resource", {}).get("target", {}).get("averageUtilization") != 60):
-            raise ValueError("HPA E1 không đúng cấu hình min=1, max=10, CPU=60% hoặc thiếu label E1")
-    if variant == "keda":
+    if controller_variant == "keda":
         scaled = source.kube("-n", ns, "get", "scaledobject", "e1-orders-sqs")
         hpa = source.kube("-n", ns, "get", "hpa", "e1-orders-keda-hpa")
         owners = hpa["metadata"].get("ownerReferences", [])
@@ -236,7 +229,7 @@ def preflight(source, variant):
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E1 chưa Ready")
-    if variant in ("hpa", "keda"):
+    if controller_variant == "keda":
         conditions = hpa.get("status", {}).get("conditions", [])
         if not all(any(c.get("type") == name and c.get("status") == "True" for c in conditions)
                    for name in ("AbleToScale", "ScalingActive")):
@@ -252,7 +245,7 @@ def preflight(source, variant):
     env = {e["name"]: e.get("value") for e in worker_containers[0].get("env", [])}
     if env.get("SQS_QUEUE_URL") != source.queue_urls[source.target["queue_name"]]:
         raise ValueError("SQS_QUEUE_URL của worker không khớp queue đang thu")
-    if variant == "keda" and (trigger.get("metadata", {}).get("queueURLFromEnv") != "SQS_QUEUE_URL"
+    if controller_variant == "keda" and (trigger.get("metadata", {}).get("queueURLFromEnv") != "SQS_QUEUE_URL"
                               or trigger.get("metadata", {}).get("queueURL")
                               or trigger.get("metadata", {}).get("awsRegion") != source.target["aws_region"]):
         raise ValueError("KEDA không dùng SQS_QUEUE_URL/region của worker")
@@ -286,7 +279,7 @@ class Collector:
         self.stop = threading.Event()
         self.errors = []
         self.warnings = set()
-        self.sample_counts = {"sqs": 0, "worker": 0}
+        self.sample_counts = {"sqs": 0, "worker": 0, "topology": 0}
         self.exports = {}
         self.started = None
         self.before = None
@@ -316,8 +309,17 @@ class Collector:
             if self.before["dlq"]:
                 data["dlq"] = self.source.queue(self.before["dlq"]["queue_name"])
             return data
+        def topology():
+            nodes = self.source.nodes()
+            claims = self.source.kube("get", "nodeclaims").get("items", [])
+            events = self.source.kube("-n", self.source.target["namespace"], "get", "events").get("items", [])
+            return {"nodes": nodes, "nodeclaims": [{"name": x.get("metadata", {}).get("name"),
+                    "uid": x.get("metadata", {}).get("uid"), "created": x.get("metadata", {}).get("creationTimestamp"),
+                    "labels": x.get("metadata", {}).get("labels", {}), "status": x.get("status", {})} for x in claims],
+                    "events": [{k: x.get(k) for k in ("reason", "message", "involvedObject", "firstTimestamp", "lastTimestamp", "eventTime", "count")}
+                               for x in events if x.get("reason") == "FailedScheduling"]}
         tasks = {name: (utc_now(), pool.submit(function)) for name, function in
-                 (("sqs", sqs), ("worker", self.source.worker))}
+                 (("sqs", sqs), ("worker", self.source.worker), ("topology", topology))}
         for name, (started, future) in tasks.items():
             try:
                 data = future.result()
@@ -326,13 +328,14 @@ class Collector:
                     self.observe_worker(data)
                     data = {"desired": data["desired"], "ready": data["ready"],
                             "pods": [{"name": p["name"], "uid": p["uid"], "node": p.get("node"),
-                                      "containers": p["containers"]} for p in data["pods"]]}
+                                      "containers": p["containers"], "phase": p["phase"], "conditions": p["conditions"],
+                                      "created_at": p["created_at"]} for p in data["pods"]]}
                 if name == "sqs" and data.get("dlq") and any(data["dlq"]["counts"].values()):
                     self.warnings.add("dlq_messages_observed")
                 if name == "sqs":
                     counts = data["main"]["counts"]
                     print(f"{ended} SQS visible={counts[COUNTS[0]]} in-flight={counts[COUNTS[1]]} delayed={counts[COUNTS[2]]}", flush=True)
-                path = self.directory / ("events/collect-worker-samples.jsonl" if name == "worker" else f"metrics/collect-{name}-samples.jsonl")
+                path = self.directory / (f"events/collect-{name}-samples.jsonl" if name in ("worker", "topology") else f"metrics/collect-{name}-samples.jsonl")
                 append_json(path, {"request_started_at_utc": started, "observed_at_utc": ended, "data": data})
                 self.sample_counts[name] += 1
             except Exception as exc:
@@ -379,7 +382,7 @@ class Collector:
                   "started_at_utc": self.started, "ended_at_utc": None,
                   "prometheus_url": self.source.url, "requested_interval_seconds": self.args.interval,
                   "prometheus_export_step_seconds": self.args.step,
-                  "validity": "not_assessed", "scope": "E1; so sánh ba chiến lược, validity chưa được đánh giá"}
+                  "validity": "not_assessed", "scope": "E1; KEDA + Karpenter warm/elastic, validity chưa được đánh giá"}
         marker = self.directory / "collection.json"
         write_json(marker, record)  # Exclusive creation also prevents two collectors claiming a run.
         previous = signal.getsignal(signal.SIGINT)
@@ -389,7 +392,7 @@ class Collector:
             self.observe_worker(before["worker"])
             print(f"ĐANG THU: {self.metadata['run_id']} (Ctrl+C sau khi workload dừng và queue drain)", flush=True)
             deadline = time.monotonic() + self.args.duration if self.args.duration else None
-            with ThreadPoolExecutor(max_workers=2) as pool:
+            with ThreadPoolExecutor(max_workers=3) as pool:
                 while not self.stop.is_set():
                     tick = time.monotonic()
                     self.sample(pool)
@@ -399,7 +402,7 @@ class Collector:
                     if deadline:
                         wait = min(wait, max(0, deadline - time.monotonic()))
                     self.stop.wait(wait)
-                print("Đang kết thúc: lấy mẫu cuối và xuất Prometheus/logs. Giữ terminal mở...", flush=True)
+                print("Đang kết thúc: lấy mẫu cuối và xuất Prometheus. Giữ terminal mở...", flush=True)
                 # Preserve a short tail so the final worker scrape has time to arrive.
                 if self.args.tail_seconds:
                     time.sleep(self.args.tail_seconds)

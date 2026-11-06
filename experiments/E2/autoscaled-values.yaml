@@ -1,4 +1,12 @@
 worker:
   externalAutoscaling: true
+  nodeSelector:
+    karpenter.sh/nodepool: e2-orders
+  # E2 uses a larger request to make node capacity visible under the pilot load.
+  # Use this request for every E2 run and revalidate throughput after E0.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
   scaledObject:
     enabled: false

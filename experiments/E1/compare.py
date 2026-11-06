@@ -20,20 +20,20 @@ def compare(reports):
     if not reports:
         raise ValueError("Cần ít nhất một report")
     reference = reports[0]
-    keys = ("profile", "workload", "resource_window_after_workload_seconds")
+    keys = ("profile", "workload", "configuration", "resource_window_before_workload_seconds", "resource_window_after_workload_seconds")
     for item in reports:
-        if item.get("variant") not in ("fixed", "hpa", "keda"):
+        if item.get("variant") not in ("warm", "elastic"):
             raise ValueError("Variant trong report không hợp lệ")
         if any(item.get(key) != reference.get(key) for key in keys):
-            raise ValueError("Các report phải cùng profile, cấu hình workload và cửa sổ quan sát")
+            raise ValueError("Các report phải cùng profile, workload, cấu hình worker/queue và cửa sổ quan sát")
     ids = [item["run_id"] for item in reports]
     if len(ids) != len(set(ids)):
         raise ValueError("Run ID bị lặp")
     lines = [f"# So sánh E1 — {reference['profile']}", "",
              "Trung vị [min–max] (số lượt có dữ liệu / số lượt); người chạy cần kiểm tra tính hợp lệ.", "",
-             "| Chiến lược | Lượt | Accepted | Success đến drain | Throughput trong tải (task/s) | p95 E2E (s) | Peak backlog | Drain (s) | Ready Pod-minutes |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    for variant in ("fixed", "hpa", "keda"):
+             "| Nhánh | Lượt | Accepted | Success đến drain | Throughput trong tải (task/s) | p95 E2E (s) | Peak backlog | Drain (s) | Ready Pod-minutes | Worker Node-minutes |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for variant in ("warm", "elastic"):
         group = [x for x in reports if x["variant"] == variant]
         if not group:
             continue
@@ -44,7 +44,8 @@ def compare(reports):
                 cell([(x.get("latency_seconds_approx_all_statuses") or {}).get("p95") for x in group], n),
                 cell([x.get("peak_visible_plus_inflight_approx") for x in group], n),
                 cell([x.get("drain_confirmation_seconds_approx") for x in group], n),
-                cell([x.get("ready_pod_minutes_approx") for x in group], n)]
+                cell([x.get("ready_pod_minutes_approx") for x in group], n),
+                cell([x.get("worker_node_minutes_approx") for x in group], n)]
         lines.append(f"| {variant} | {n} | " + " | ".join(cols) + " |")
     lines.extend(["", "Các metric là ước lượng; success và latency không thay thế đối soát job ID."
                   " Kiểm tra cùng image, node, worker và điều kiện thí nghiệm trước khi kết luận.", ""])

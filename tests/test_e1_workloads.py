@@ -23,14 +23,13 @@ class WorkloadScriptsTests(unittest.TestCase):
     def test_profile_schedules(self):
         expected = {
             "stead": [(5, "2m0s")],
-            "step": [(5, "2m0s"), (10, "2m0s"), (15, "2m0s"), (20, "2m0s"),
-                     (15, "2m0s"), (10, "2m0s"), (5, "2m0s")],
-            "burst": [(5, "1m0s"), (55, "30s"), (5, "1m0s")],
+            "step": [(5, "1m0s"), (10, "1m0s"), (15, "1m0s"), (20, "1m0s"),
+                     (15, "1m0s"), (10, "1m0s"), (5, "1m0s")],
+            "burst": [(5, "1m0s"), (40, "30s"), (5, "1m0s")],
         }
         for profile, levels in expected.items():
             with self.subTest(profile=profile):
-                env = ("HIGH_RATE=55",) if profile == "burst" else ()
-                result = self.inspect(profile, *env)
+                result = self.inspect(profile)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 scenario = json.loads(result.stdout)["scenarios"]["jobs"]
                 self.assertEqual(scenario["executor"], "ramping-arrival-rate")
@@ -42,10 +41,8 @@ class WorkloadScriptsTests(unittest.TestCase):
     def test_invalid_step_and_obsolete_profile_are_rejected(self):
         self.assertNotEqual(self.inspect("step", "HIGH_RATE=27").returncode, 0)
         self.assertNotEqual(self.inspect("stead", "LOW_RATE=10").returncode, 0)
-        self.assertNotEqual(self.inspect("burst").returncode, 0)
-        self.assertNotEqual(self.inspect("burst", "HIGH_RATE=5").returncode, 0)
-        self.assertNotEqual(self.inspect("burst", "HIGH_RATE=30.5").returncode, 0)
-        self.assertNotEqual(self.inspect("burst", "LOW_RATE=5", "HIGH_RATE=30").returncode, 0)
+        self.assertNotEqual(self.inspect("burst", "HIGH_RATE=40").returncode, 0)
+        self.assertNotEqual(self.inspect("burst", "LOW_RATE=5").returncode, 0)
         self.assertNotEqual(self.inspect("burst", "PROFILE=step").returncode, 0)
 
 

@@ -42,31 +42,31 @@ class ManifestTests(unittest.TestCase):
         self.assertNotIn("kind: NodePool", disabled)
         self.assertNotIn("kind: EC2NodeClass", disabled)
 
-    def test_e3_nodepool_is_separate_and_does_not_own_shared_resources(self):
+    def test_e2_nodepool_is_separate_and_does_not_own_shared_resources(self):
         result = subprocess.run([
-            "helm", "template", "e3-capacity", str(ROOT / "kubernetes/charts/platform-config"),
+            "helm", "template", "e2-capacity", str(ROOT / "kubernetes/charts/platform-config"),
             "-n", "karpenter", "-f", str(ROOT / "kubernetes/environments/dev/platform.yaml"),
-            "-f", str(ROOT / "experiments/E3/karpenter-values.yaml")],
+            "-f", str(ROOT / "experiments/E2/karpenter-values.yaml")],
             check=True, capture_output=True, text=True).stdout
         self.assertIn("kind: NodePool", result)
         self.assertIn("kind: EC2NodeClass", result)
-        self.assertEqual(result.count("name: e3-orders"), 3)
+        self.assertEqual(result.count("name: e2-orders"), 3)
         self.assertIn('values: ["c7i-flex.large"]', result)
-        self.assertIn("consolidateAfter: Never", result)
+        self.assertIn("consolidateAfter: 1m", result)
         self.assertNotIn("kind: ClusterTriggerAuthentication", result)
         self.assertNotIn("kind: ServiceMonitor", result)
 
-    def test_e3_worker_targets_only_e3_nodepool(self):
+    def test_e2_worker_targets_only_e2_nodepool(self):
         backend = ROOT.parent / "retailstore-backend-microservices"
         if not backend.exists(): self.skipTest("Backend checkout is unavailable")
         result = subprocess.run([
             "helm", "template", "orders", str(backend / "src/orders/chart"), "-n", "retailstore",
             "-f", str(ROOT / "kubernetes/environments/dev/apps/orders.yaml"),
-            "-f", str(ROOT / "experiments/E3/autoscaled-values.yaml")],
+            "-f", str(ROOT / "experiments/E2/autoscaled-values.yaml")],
             check=True, capture_output=True, text=True).stdout
         worker = result.split("templates/deployment-worker.yaml", 1)[1].split("---", 1)[0]
         self.assertNotIn("  replicas:", worker)
-        self.assertIn("karpenter.sh/nodepool: e3-orders", worker)
+        self.assertIn("karpenter.sh/nodepool: e2-orders", worker)
 
     def test_worker_scaling_can_select_orders_only(self):
         rendered = render("worker-scaling", "kubernetes/environments/dev/autoscaling.yaml",
