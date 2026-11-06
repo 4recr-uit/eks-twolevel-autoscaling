@@ -1,4 +1,4 @@
-# Tạm giữ chỗ cho tối đa 10 worker với requests tương đương Orders.
+# Tạm giữ chỗ cho một worker với requests tương đương Orders.
 # Xóa Deployment sau khi tất cả pod Ready; NodePool E3 không consolidate.
 apiVersion: apps/v1
 kind: Deployment
@@ -8,7 +8,7 @@ metadata:
   labels:
     experiments.retailstore.dev/owner: e3
 spec:
-  replicas: 10
+  replicas: 1
   selector:
     matchLabels:
       app: e3-warm-capacity
@@ -24,5 +24,5 @@ spec:
           image: registry.k8s.io/pause:3.9
           resources:
             requests:
-              cpu: 128m
+              cpu: 500m
               memory: 256Mi

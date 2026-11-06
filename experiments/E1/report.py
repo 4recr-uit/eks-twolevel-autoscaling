@@ -87,7 +87,7 @@ def replica_minutes(series, start, end, step):
 def first_scale_after_high(values, start, end, profile, version):
     if profile not in ("step", "burst"):
         return None
-    offsets = {1: 60, 2: 180, 3: 360} if profile == "step" else {1: 60, 2: 60, 3: 60}
+    offsets = {1: 60, 2: 180, 3: 360, 4: 180} if profile == "step" else {1: 60, 2: 60, 3: 60, 4: 60}
     high_start = start + offsets[version]
     before_high = [v for t, v in values if t <= high_start]
     if not before_high:
@@ -96,11 +96,21 @@ def first_scale_after_high(values, start, end, profile, version):
     return round(first - high_start, 1) if first is not None else None
 
 
-def summarize(directory, after=300):
+def summarize(directory, after=60, before=60):
     metadata = read_json(directory / "metadata.json")
     collection = read_json(directory / "collection.json")
+    initial = read_json(directory / "events/collect-before.json")
+    initial_worker = initial.get("worker", {})
+    configuration = {"queue_name": metadata.get("target", {}).get("queue_name"),
+                     "region": metadata.get("target", {}).get("aws_region"),
+                     "node_selector": initial_worker.get("node_selector"),
+                     "containers": initial_worker.get("containers"),
+                     "image_ids": sorted({c.get("imageID") for p in initial_worker.get("pods", [])
+                                          for c in p.get("containers", []) if c.get("imageID")})}
     if metadata.get("scenario") != "E1" or collection.get("status") not in ("finished", "partial"):
         raise ValueError("Cần hồ sơ E1 có collection đã kết thúc")
+    if metadata.get("variant") not in ("warm", "elastic"):
+        raise ValueError("Variant E1 phải là warm hoặc elastic")
     k6 = read_json(directory / "raw/k6-summary.json")["metrics"]
     profile_codes = {0: "steady", 1: "step", 2: "burst"}
     db_codes = {0: "none", 1: "light", 2: "full"}
@@ -108,7 +118,7 @@ def summarize(directory, after=300):
     if actual_profile != metadata.get("profile"):
         raise ValueError("PROFILE trong summary không khớp hồ sơ lượt chạy")
     version = k6.get("workload_model_version", {}).get("value", 1)
-    if version not in (1, 2, 3):
+    if version not in (1, 2, 3, 4):
         raise ValueError("Phiên bản workload không được hỗ trợ")
     workload = {"model_version": version,
                 "low_request_per_second": k6["workload_low_rate"]["value"],
@@ -121,7 +131,7 @@ def summarize(directory, after=300):
     start = k6["workload_started_at_unix_ms"]["value"] / 1000
     load_end = k6["workload_finished_at_unix_ms"]["value"] / 1000
     end = load_end + after
-    if (start >= load_end or timestamp(collection["started_at_utc"]) > start
+    if (before < 0 or start >= load_end or timestamp(collection["started_at_utc"]) > start - before
             or timestamp(collection["ended_at_utc"]) < end):
         raise ValueError("Cần thu hết workload và đủ thời gian quan sát sau workload trước khi lập báo cáo")
     step = float(collection.get("prometheus_export_step_seconds", 5))
@@ -182,7 +192,7 @@ def summarize(directory, after=300):
     if ready_minutes is None:
         warnings.append("ready_replica_samples_incomplete")
     first_scale, first_high_scale = None, None
-    if metadata.get("variant") != "fixed" and len(desired) == 1:
+    if len(desired) == 1:
         values = sorted((float(t), float(v)) for t, v in desired[0].get("values", []))
         initial = [v for t, v in values if t <= start]
         if initial:
@@ -209,6 +219,18 @@ def summarize(directory, after=300):
         warnings.append("missing_node_samples")
     elif len({tuple(sorted(nodes)) for nodes in node_points.values()}) > 1:
         warnings.append("node_set_changed_in_window")
+    topology_path = directory / "events/collect-topology-samples.jsonl"
+    node_minutes = None
+    if topology_path.exists():
+        topology = [json.loads(line) for line in topology_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        points = sorted((timestamp(x["observed_at_utc"]),
+                         sum(n.get("labels", {}).get("karpenter.sh/nodepool") == "e1-orders"
+                             for n in x["data"].get("nodes", []))) for x in topology)
+        if points:
+            node_minutes = replica_minutes([{"values": points}], start - before, end,
+                                           float(collection.get("requested_interval_seconds", 5)) + 10)
+    if node_minutes is None:
+        warnings.append("worker_node_samples_incomplete")
     cpu_series = matrix(directory, "worker_cpu_counter")
     cpu_deltas = [counter_delta(x, start, end) for x in cpu_series]
     cpu_deltas = [v for v in cpu_deltas if v is not None]
@@ -216,8 +238,10 @@ def summarize(directory, after=300):
         warnings.append("missing_cpu_samples")
     return {
         "run_id": metadata["run_id"], "variant": metadata["variant"], "profile": metadata["profile"], "workload": workload,
+        "configuration": configuration,
         "workload_started_utc": dt.datetime.fromtimestamp(start, dt.timezone.utc).isoformat(),
         "workload_finished_utc": dt.datetime.fromtimestamp(load_end, dt.timezone.utc).isoformat(),
+        "resource_window_before_workload_seconds": before,
         "resource_window_after_workload_seconds": after,
         "accepted_jobs": k6.get("e1_accepted_jobs", {}).get("count"),
         "success_per_second_during_workload_approx": (round(completed_during_load["success"] / (load_end - start), 2)
@@ -228,6 +252,8 @@ def summarize(directory, after=300):
         "peak_visible_plus_inflight_approx": peak,
         "drain_confirmation_seconds_approx": drain,
         "ready_pod_minutes_approx": ready_minutes,
+        "worker_node_minutes_approx": node_minutes,
+        "worker_node_scope": "e1-orders; workload start - before to workload end + after; Kubernetes node presence, not EC2 billed duration",
         "mean_worker_cpu_millicores_approx": round(sum(cpu_deltas) / (end - start) * 1000, 1) if cpu_deltas else None,
         "first_scale_out_after_start_seconds_approx": first_scale,
         "first_scale_out_after_high_seconds_approx": first_high_scale,
@@ -243,12 +269,13 @@ def main():
         sys.stderr.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True, type=Path)
-    parser.add_argument("--after", type=int, default=300, help="giây quan sát sau workload; giữ giống nhau giữa các lượt")
+    parser.add_argument("--before", type=int, default=60, help="giây idle trước workload trong cửa sổ Node-minutes")
+    parser.add_argument("--after", type=int, default=60, help="giây quan sát sau workload; giữ giống nhau giữa các lượt")
     args = parser.parse_args()
     try:
-        if args.after < 0:
-            raise ValueError("--after phải không âm")
-        report = summarize(args.run_dir, args.after)
+        if args.after < 0 or args.before < 0:
+            raise ValueError("--before và --after phải không âm")
+        report = summarize(args.run_dir, args.after, args.before)
         output = args.run_dir / "report.json"
         with output.open("x", encoding="utf-8", newline="\n") as stream:
             json.dump(report, stream, ensure_ascii=False, indent=2, allow_nan=False)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only E0 collector. Ctrl+C finalizes the run; it never starts workload."""
+"""Read-only E1 collector. Ctrl+C finalizes the run; it never starts workload."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -44,8 +44,8 @@ def load_run(directory):
     metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8-sig"))
     if not isinstance(metadata, dict):
         raise ValueError("metadata.json phải là JSON object")
-    if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E0":
-        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E0 schema_version=1 do run.py init tạo.")
+    if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E1":
+        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E1 schema_version=1 do init.py tạo.")
     target = metadata.get("target", {})
     if not isinstance(target, dict) or not isinstance(metadata.get("run_id"), str) or not metadata["run_id"]:
         raise ValueError("metadata thiếu run_id hoặc target hợp lệ")
@@ -121,7 +121,7 @@ class Source:
         dep = self.kube("-n", target["namespace"], "get", "deployment", target["deployment"])
         selector = dep["spec"]["selector"]
         if not selector.get("matchLabels") or selector.get("matchExpressions"):
-            raise ValueError("E0 collector yêu cầu Deployment có selector matchLabels đơn giản")
+            raise ValueError("E1 collector yêu cầu Deployment có selector matchLabels đơn giản")
         labels = ",".join(f"{k}={v}" for k, v in sorted(selector["matchLabels"].items()))
         pods = self.kube("-n", target["namespace"], "get", "pods", "-l", labels)["items"]
         spec = dep["spec"]["template"]["spec"]
@@ -167,59 +167,108 @@ class Source:
 def queries(target):
     ns, dep = json.dumps(target["namespace"]), json.dumps(target["deployment"])
     pod = json.dumps(re.escape(target["deployment"]) + "-.*")
-    worker = f'namespace={ns},pod=~{pod}'
-    metrics = ["worker_tasks_processed_total", "worker_in_flight_tasks"]
-    for base in ("worker_task_duration_seconds", "worker_job_queue_wait_seconds", "worker_job_e2e_latency_seconds"):
-        metrics.extend(base + suffix for suffix in ("_bucket", "_sum", "_count"))
-    result = {m: f"{m}{{{worker}}}" for m in metrics}
-    result.update({
-        "published_jobs": f"app_sqs_messages_published_total{{namespace={ns}}}",
-        "worker_cpu_counter": f'container_cpu_usage_seconds_total{{{worker},container!="",container!="POD"}}',
-        "worker_memory": f'container_memory_working_set_bytes{{{worker},container!="",container!="POD"}}',
-        "worker_target_up": f"up{{{worker}}}",
-        "desired_replicas": f"kube_deployment_spec_replicas{{namespace={ns},deployment={dep}}}",
-        "ready_replicas": f"kube_deployment_status_replicas_ready{{namespace={ns},deployment={dep}}}",
-        "pending_pods": f'kube_pod_status_phase{{{worker},phase="Pending"}}',
-        "node_ready": 'kube_node_status_condition{condition="Ready",status="true"}',
-        "node_info": "kube_node_info",
-    })
-    return result
+    queue = json.dumps(target["queue_name"])
+    worker = f'namespace={ns},pod=~{pod},queue={queue}'
+    pod_selector = f'namespace={ns},pod=~{pod}'
+    return {
+        "published_jobs": f'app_sqs_messages_published_total{{namespace={ns},queue={queue}}}',
+        "worker_tasks_processed_total": f'worker_tasks_processed_total{{{worker}}}',
+        "worker_job_e2e_latency_seconds_bucket": f'worker_job_e2e_latency_seconds_bucket{{{worker}}}',
+        "worker_cpu_counter": f'container_cpu_usage_seconds_total{{{pod_selector},container!="",container!="POD"}}',
+        "worker_target_up": f'up{{{pod_selector}}}',
+        "desired_replicas": f'kube_deployment_spec_replicas{{namespace={ns},deployment={dep}}}',
+        "ready_replicas": f'kube_deployment_status_replicas_ready{{namespace={ns},deployment={dep}}}',
+        "pending_pods": f'kube_pod_status_phase{{{pod_selector},phase="Pending"}}',
+        "node_info": 'kube_node_info',
+    }
 
 
-def preflight(source):
+def preflight(source, variant):
+    expected = {
+        "hpa": {"hpa/e1-orders-cpu"},
+        "keda": {"hpa/e1-orders-keda-hpa", "scaledobjects.keda.sh/e1-orders-sqs"},
+    }
+    if variant not in expected:
+        raise ValueError("Variant E1 phải là hpa hoặc keda")
     worker = source.worker()
-    if worker["desired"] != 1 or worker["ready"] != 1:
-        raise ValueError("E0 yêu cầu đúng một worker desired/Ready")
-    if len(worker["pods"]) != 1 or not worker["pods"][0]["containers"] or any(
-            not c["ready"] or not c["imageID"] for c in worker["pods"][0]["containers"]):
-        raise ValueError("Chờ rollout hoàn tất và một worker có image digest trước khi thu E0")
+    replicas = 1
+    if worker["desired"] != replicas or worker["ready"] != replicas:
+        raise ValueError(f"E1 {variant} cần {replicas} worker desired/Ready trước lượt")
+    if len(worker["pods"]) != replicas or any(
+            not p["containers"] or any(not c["ready"] or not c["imageID"] for c in p["containers"])
+            for p in worker["pods"]):
+        raise ValueError("Chờ worker Ready và có image digest trước khi thu")
     controllers = source.controllers()
-    if controllers:
-        raise ValueError(f"E0 không dùng autoscaler cho worker: {controllers}")
+    if set(controllers) != expected[variant]:
+        raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
+    ns = source.target["namespace"]
+    if variant == "hpa":
+        hpa = source.kube("-n", ns, "get", "hpa", "e1-orders-cpu")
+        spec = hpa["spec"]
+        metrics = spec.get("metrics", [])
+        if (hpa["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e1"
+                or spec.get("minReplicas", 1) != 1 or spec.get("maxReplicas") != 10
+                or len(metrics) != 1 or metrics[0].get("type") != "Resource"
+                or metrics[0].get("resource", {}).get("name") != "cpu"
+                or metrics[0].get("resource", {}).get("target", {}).get("type") != "Utilization"
+                or metrics[0].get("resource", {}).get("target", {}).get("averageUtilization") != 60):
+            raise ValueError("HPA E1 không đúng cấu hình min=1, max=10, CPU=60% hoặc thiếu label E1")
+    if variant == "keda":
+        scaled = source.kube("-n", ns, "get", "scaledobject", "e1-orders-sqs")
+        hpa = source.kube("-n", ns, "get", "hpa", "e1-orders-keda-hpa")
+        owners = hpa["metadata"].get("ownerReferences", [])
+        spec = scaled["spec"]
+        triggers = spec.get("triggers", [])
+        trigger = triggers[0] if len(triggers) == 1 else {}
+        if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e1"
+                or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
+                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
+                or spec.get("pollingInterval", 30) != 30
+                or spec.get("cooldownPeriod", 300) != 300
+                or hpa.get("spec", {}).get("minReplicas", 1) != 1
+                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or trigger.get("type") != "aws-sqs-queue"
+                or str(trigger.get("metadata", {}).get("queueLength")) != "10"
+                or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
+                or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
+            raise ValueError("ScaledObject/HPA E1 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
+        if not any(c.get("type") == "Ready" and c.get("status") == "True"
+                   for c in scaled.get("status", {}).get("conditions", [])):
+            raise ValueError("ScaledObject E1 chưa Ready")
+    if variant in ("hpa", "keda"):
+        conditions = hpa.get("status", {}).get("conditions", [])
+        if not all(any(c.get("type") == name and c.get("status") == "True" for c in conditions)
+                   for name in ("AbleToScale", "ScalingActive")):
+            raise ValueError("HPA chưa AbleToScale/ScalingActive; kiểm tra metric và chờ đồng bộ")
     queue = source.queue(source.target["queue_name"])
+    # Verify the queue feeding the worker (and KEDA's queueURLFromEnv) is the
+    # same queue being sampled. Do not persist the queue URL in the output.
+    deployment = source.kube("-n", ns, "get", "deployment", source.target["deployment"])
+    containers = deployment["spec"]["template"]["spec"]["containers"]
+    worker_containers = [c for c in containers if c.get("name") == source.target["deployment"]]
+    if len(worker_containers) != 1:
+        raise ValueError("Không xác định được container worker")
+    env = {e["name"]: e.get("value") for e in worker_containers[0].get("env", [])}
+    if env.get("SQS_QUEUE_URL") != source.queue_urls[source.target["queue_name"]]:
+        raise ValueError("SQS_QUEUE_URL của worker không khớp queue đang thu")
+    if variant == "keda" and (trigger.get("metadata", {}).get("queueURLFromEnv") != "SQS_QUEUE_URL"
+                              or trigger.get("metadata", {}).get("queueURL")
+                              or trigger.get("metadata", {}).get("awsRegion") != source.target["aws_region"]):
+        raise ValueError("KEDA không dùng SQS_QUEUE_URL/region của worker")
     if any(queue["counts"].values()):
-        raise ValueError(f"Queue chưa rỗng: {queue['counts']}; xử lý/đối chiếu backlog trước lượt mới")
+        raise ValueError(f"Queue chưa rỗng: {queue['counts']}")
     dlq = None
     if queue["redrive_policy"]:
         name = queue["redrive_policy"]["deadLetterTargetArn"].rsplit(":", 1)[-1]
         dlq = source.queue(name)
         if any(dlq["counts"].values()):
-            raise ValueError("DLQ chưa rỗng; đối chiếu và xử lý dữ liệu cũ trước E0")
+            raise ValueError("DLQ chưa rỗng; đối chiếu trước lượt mới")
     up = source.prom("query", query=queries(source.target)["worker_target_up"])
     values = up.get("data", {}).get("result", [])
-    if not values or any(float(item["value"][1]) != 1 for item in values):
-        raise ValueError("Prometheus chưa có target worker UP; kiểm tra port-forward/targets")
-    return {"observed_at_utc": utc_now(), "worker": worker, "nodes": source.nodes(), "queue": queue, "dlq": dlq,
-            "controllers": controllers, "worker_target_up": up}
-
-
-def prom_sample(source):
-    # One request per tick preserves raw counters/buckets rather than only a smoothed rate.
-    q = queries(source.target)
-    expression = " or ".join(q[name] for name in (
-        "worker_tasks_processed_total", "worker_in_flight_tasks", "worker_target_up",
-        "worker_cpu_counter", "worker_memory", "desired_replicas", "ready_replicas"))
-    return source.prom("query", query=expression)
+    if len(values) < replicas or any(float(item["value"][1]) != 1 for item in values):
+        raise ValueError("Prometheus chưa có đủ target worker UP")
+    return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": source.nodes(),
+            "queue": queue, "dlq": dlq, "controllers": controllers}
 
 
 def matrix_stats(data):
@@ -236,8 +285,7 @@ class Collector:
         self.stop = threading.Event()
         self.errors = []
         self.warnings = set()
-        self.sample_counts = {"sqs": 0, "worker": 0, "prometheus": 0}
-        self.pods = {}
+        self.sample_counts = {"sqs": 0, "worker": 0}
         self.exports = {}
         self.started = None
         self.before = None
@@ -249,15 +297,17 @@ class Collector:
         print(f"Cảnh báo {source}: {item['error']}", flush=True)
 
     def observe_worker(self, worker):
-        for pod in worker["pods"]:
-            self.pods[pod["name"]] = pod
-        if worker["desired"] != 1 or worker["ready"] != 1:
-            self.warnings.add("worker_not_one_ready_during_collection")
-        if self.before and worker != self.before["worker"]:
-            # Ignore timestamp-only condition changes; detect image/UID/restarts explicitly.
-            fingerprint = lambda w: (w["uid"], w["generation"], [(p["uid"], p["node"], p["containers"]) for p in w["pods"]])
-            if fingerprint(worker) != fingerprint(self.before["worker"]):
-                self.warnings.add("worker_configuration_or_pod_changed")
+        if self.before:
+            original = self.before["worker"]
+            if worker["uid"] != original["uid"] or worker["containers"] != original["containers"]:
+                self.warnings.add("worker_configuration_changed")
+            baseline_ids = {c.get("imageID") for p in original["pods"] for c in p["containers"]}
+            for pod in worker["pods"]:
+                for container in pod["containers"]:
+                    if container.get("imageID") and container["imageID"] not in baseline_ids:
+                        self.warnings.add("worker_image_changed")
+                    if container.get("restartCount", 0):
+                        self.warnings.add("worker_restarted")
 
     def sample(self, pool):
         def sqs():
@@ -266,24 +316,21 @@ class Collector:
                 data["dlq"] = self.source.queue(self.before["dlq"]["queue_name"])
             return data
         tasks = {name: (utc_now(), pool.submit(function)) for name, function in
-                 (("sqs", sqs), ("worker", self.source.worker), ("prometheus", lambda: prom_sample(self.source)))}
+                 (("sqs", sqs), ("worker", self.source.worker))}
         for name, (started, future) in tasks.items():
             try:
                 data = future.result()
                 ended = utc_now()
                 if name == "worker":
                     self.observe_worker(data)
+                    data = {"desired": data["desired"], "ready": data["ready"],
+                            "pods": [{"name": p["name"], "uid": p["uid"], "node": p.get("node"),
+                                      "containers": p["containers"]} for p in data["pods"]]}
                 if name == "sqs" and data.get("dlq") and any(data["dlq"]["counts"].values()):
                     self.warnings.add("dlq_messages_observed")
                 if name == "sqs":
                     counts = data["main"]["counts"]
                     print(f"{ended} SQS visible={counts[COUNTS[0]]} in-flight={counts[COUNTS[1]]} delayed={counts[COUNTS[2]]}", flush=True)
-                if name == "prometheus":
-                    if data.get("warnings"):
-                        self.warnings.add("prometheus_query_warnings")
-                    up = [i for i in data.get("data", {}).get("result", []) if i["metric"].get("__name__") == "up"]
-                    if not up or any(float(i["value"][1]) != 1 for i in up):
-                        self.warnings.add("worker_scrape_missing_or_down")
                 path = self.directory / ("events/collect-worker-samples.jsonl" if name == "worker" else f"metrics/collect-{name}-samples.jsonl")
                 append_json(path, {"request_started_at_utc": started, "observed_at_utc": ended, "data": data})
                 self.sample_counts[name] += 1
@@ -298,8 +345,8 @@ class Collector:
                 before_nodes = {(n["name"], n["uid"]) for n in self.before["nodes"]}
                 if before_nodes != {(n["name"], n["uid"]) for n in after["nodes"]}:
                     self.warnings.add("node_set_changed")
-            if after["controllers"]:
-                self.warnings.add("autoscaler_present_at_end")
+            if set(after["controllers"]) != set(self.before["controllers"]):
+                self.warnings.add("autoscaler_changed")
             write_json(self.directory / "events/collect-after.json", after)
         except Exception as exc:
             self.error("snapshot_after", exc)
@@ -323,22 +370,6 @@ class Collector:
                     self.warnings.add(f"prometheus_review:{name}")
             except Exception as exc:
                 self.error(f"prometheus_export:{name}", exc)
-        for pod in self.pods.values():
-            for container in pod["containers"]:
-                try:
-                    text = self.source.command([
-                        "kubectl", "--context", self.source.target["kube_context"], "-n", self.source.target["namespace"],
-                        "logs", pod["name"], "-c", container["name"], "--timestamps", f"--since-time={self.started}",
-                    ], raw=True)
-                    # Do not persist an invalid benchmark message body printed by the app.
-                    text = re.sub(r"(?m)(raw body:).*", r"\1 [redacted]", text)
-                    path = self.directory / f"logs/collect-{pod['name']}-{container['name']}.log"
-                    with path.open("x", encoding="utf-8", newline="\n") as stream:
-                        stream.write(text)
-                    if any(c.get("restartCount", 0) for c in pod["containers"]):
-                        self.warnings.add("pod_restarted_logs_may_be_incomplete")
-                except Exception as exc:
-                    self.error(f"pod_log:{pod['name']}", exc)
 
     def run(self, before):
         self.before = before
@@ -347,7 +378,7 @@ class Collector:
                   "started_at_utc": self.started, "ended_at_utc": None,
                   "prometheus_url": self.source.url, "requested_interval_seconds": self.args.interval,
                   "prometheus_export_step_seconds": self.args.step,
-                  "validity": "not_assessed", "scope": "E0; workload timestamps must be recorded separately"}
+                  "validity": "not_assessed", "scope": "E1; so sánh ba chiến lược, validity chưa được đánh giá"}
         marker = self.directory / "collection.json"
         write_json(marker, record)  # Exclusive creation also prevents two collectors claiming a run.
         previous = signal.getsignal(signal.SIGINT)
@@ -357,7 +388,7 @@ class Collector:
             self.observe_worker(before["worker"])
             print(f"ĐANG THU: {self.metadata['run_id']} (Ctrl+C sau khi workload dừng và queue drain)", flush=True)
             deadline = time.monotonic() + self.args.duration if self.args.duration else None
-            with ThreadPoolExecutor(max_workers=3) as pool:
+            with ThreadPoolExecutor(max_workers=2) as pool:
                 while not self.stop.is_set():
                     tick = time.monotonic()
                     self.sample(pool)
@@ -386,9 +417,9 @@ class Collector:
                        "## Cần kiểm tra", "",
                        *[f"- {warning}" for warning in record["warnings"]],
                        *[f"- Lỗi {item['source']}: {item['error']}" for item in self.errors], "",
-                       "Chưa đánh giá tính hợp lệ hay tính μ. Ghi thời gian từng pha workload trong notes.md/metadata.json;",
-                       "đối chiếu raw/k6-summary.json, counters/logs thành công, backlog và cấu hình trước khi điền bảng E0.",
-                       "Query_range xuất các mẫu đánh giá biểu thức, không phải bản sao TSDB hay đối soát job duy nhất."]
+                       "Chưa đánh giá tính hợp lệ. Đối chiếu timestamp k6, queue, counters và replica;",
+                       "kiểm tra drain, errors, dropped iterations và node trước khi so sánh E1.",
+                       "Histogram E2E gồm cả error/duplicate; SQS là xấp xỉ, counters không đối soát job ID."]
             with (self.directory / "collection-summary.md").open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write("\n".join(summary) + "\n")
             # Publish the finished marker only after all outputs were written.
@@ -431,9 +462,9 @@ def main(argv=None):
         directory, metadata = load_run(args.run_dir)
         source = Source(metadata["target"], args.prometheus_url, args.request_timeout)
         print("Đang kiểm tra worker, queue/DLQ và Prometheus...", flush=True)
-        before = preflight(source)
+        before = preflight(source, metadata.get("variant"))
         if args.check:
-            print("Kiểm tra nguồn thu E0 đạt. Chưa thu dữ liệu hay chạy workload.")
+            print("Kiểm tra nguồn thu E1 đạt. Chưa thu dữ liệu hay chạy workload.")
             return 0
         return Collector(directory, metadata, source, args).run(before)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:

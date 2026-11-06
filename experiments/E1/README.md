@@ -1,112 +1,166 @@
-# E1 — Fixed vs CPU-HPA vs KEDA SQS
+# E1 — Warm vs Elastic với KEDA và Karpenter
 
-## Mục tiêu và cấu hình
+E1 so sánh cùng worker, KEDA, Karpenter và workload trong hai điều kiện đầu: **warm** có sẵn node worker và đủ capacity cho nhu cầu dự kiến; **elastic** bắt đầu với một worker Ready, không chuẩn bị thêm capacity, và cần quan sát Pod Unschedulable do thiếu capacity cùng NodeClaim/node mới. Kiểm tra hai điều kiện trước khi kết luận; một lượt không tạo node mới vẫn là dữ liệu quan sát nhưng không chứng minh đường provisioning.
 
-So sánh ba chiến lược trên cùng Orders worker, SQS queue và workload, với node capacity đủ và số node ổn định. E0 chọn μ sơ bộ ≈ **8,9 task/s/worker**; kết quả E1 vẫn cần pilot và đo thực tế.
+Mọi lệnh dưới đây chạy từ `experiments/E1` trong Git Bash. Mỗi terminal đều đặt thư mục này; không cần `cd` sang E khác. File trong thư mục này là bộ E1 riêng. Chart hạ tầng và chart ứng dụng vẫn dùng từ project.
 
-| Phương án | Cấu hình pilot | Điều kiện đầu mỗi lượt |
-|---|---|---|
-| Fixed | 2 worker | 2 desired/Ready, không có HPA/ScaledObject |
-| CPU-HPA | min 1, max 10, CPU target 60% request | 1 desired/Ready, chỉ có `e1-orders-cpu` |
-| KEDA SQS | min 1, max 10, target 10 message/Pod, tính in-flight | 1 desired/Ready, chỉ có `e1-orders-sqs` và HPA do nó tạo |
+## File và thông số
 
-Workload pilot theo [E0](../E0/README.md): [Steady](stead.js) **5 request/s × 2 phút**; [Step](step.js) **5 → 10 → 15 → 20 → 15 → 10 → 5 request/s**, mỗi bậc 2 phút; [Burst](burst.js) **5/s × 1 phút → 40/s × 30 giây → 5/s × 1 phút**. Burst tạm chốt ở 40/s cho pilot và cần truyền `HIGH_RATE=40` khi chạy. Steady và Step version 3 được cố định trực tiếp trong file; Burst version 3 nhận `HIGH_RATE` lớn hơn 5 request/s. Step chuyển mức tức thời, giữ cố định từng bậc. K6 đo request/s; số task thực tế phải dựa vào accepted jobs. Giữ `WORK_UNITS=100`, `DB_MODE=light`, `BATCH_SIZE=1` và cùng cấu hình giữa ba nhánh pilot. DB mode `light` ghi dữ liệu thử vào database. Cả ba script dùng chung [workload-common.js](workload-common.js).
+| File | Vai trò |
+|---|---|
+| `karpenter-values.yaml` | NodePool/NodeClass `e1-orders`, On-Demand, `c7i-flex.large`, consolidation `Never` |
+| `autoscaled-values.yaml`, `keda.yaml` | Worker chọn NodePool E1; KEDA SQS min 1, max 10, queueLength 10, polling 30s, cooldown 300s |
+| `warm-capacity.yaml` | 10 Pod tạm giữ chỗ để chuẩn bị warm; requests 500m/256Mi khớp overlay worker E1 |
+| `stead.js`, `step.js`, `burst.js`, `workload-common.js` | workload E0 tại chỗ: Steady 5/s 2 phút; Step 5→10→15→20→15→10→5/s, mỗi bậc 1 phút; Burst 5/s 1 phút → 40/s 30 giây → 5/s 1 phút |
+| `run.py`, `run.sh` | Tạo hồ sơ/kiểm tra target và các lệnh tắt; `run.sh` không apply hoặc xóa tài nguyên |
+| `collect.py`, `snapshot.py` | `collect.py` thu SQS, Prometheus, Pod, Node/NodeClaim/event; `snapshot.py` là công cụ Kubernetes chỉ đọc bổ sung, không bắt buộc |
+| `report.py`, `compare.py` | Tóm tắt một lượt và so sánh các report cùng workload/cửa sổ |
 
-Lưu ý khi pilot: ở E0, 5 request/s đã dùng trung bình khoảng 511m CPU trên một worker, tương đương gần 399% request 128m, cao hơn target HPA 60%. Vì vậy CPU-HPA có thể scale ngay trong pha tải thấp; ghi nhận diễn biến này, không giả định đến pha 27 request/s mới scale. CPU E0 là số đo của một lượt và còn phụ thuộc cấu hình workload thực tế.
+Các giá trị trên là **cấu hình đề xuất trong repo, chưa xác nhận trên cluster**. E1 đặt CPU request worker thành **500m** thay cho mức 128m đã dùng trong E0, nhằm làm rõ giới hạn scheduling trên node 2 vCPU; cả hai nhánh đều dùng cùng request này. Thay đổi request có thể ảnh hưởng chia sẻ CPU, nên cần pilot lại throughput trước khi dùng ước lượng μ từ E0. Cấu hình vẫn không bảo đảm workload sẽ tạo Pending: phải kiểm chứng bằng dữ liệu. Hai nhánh phải cùng image/digest, requests/limits, concurrency, queue, KEDA, loại node và workload; ghi cả khác biệt không kiểm soát. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet, AMI, IP và chi phí; warm có thể tạo nhiều node, và `Never` giữ node sau khi hết tải.
 
-Giữ request 128m và target 60% cho pilot để nhất quán với E0. Với một Pod dùng 511m, công thức lý tưởng đề xuất khoảng 7 Pod tại target 60%; target 70%, 80%, 90% vẫn đề xuất lần lượt khoảng 6, 5, 5 Pod. Số thực tế phụ thuộc metric, dung sai, tốc độ scale và cách tải được chia. Nếu pilot cho thấy HPA dùng quá nhiều Pod, một hướng khảo sát riêng là tăng CPU request, ví dụ 1000m với target 60% tương ứng 600m/Pod. Khi đó phải chuẩn bị đủ node capacity, vì 10 Pod request 1000m cần ít nhất 10 CPU allocatable dành riêng cho chúng, và xác nhận lại μ. Không thay request chỉ cho HPA trong phép so sánh chính.
+## 1. Kiểm tra và lưu baseline
 
-## Chuẩn bị
-
-- Cần Helm, kubectl, AWS CLI, Python, k6, Metrics Server, KEDA, Prometheus, Orders API/worker và SQS; giữ Prometheus port-forward 9090 và Orders API port-forward 8082. Các lệnh dùng Git Bash sau khi `cd /d/WorkSpace/UITMagnolia/eks-twolevel-autoscaling/experiments/E1`; mỗi terminal thao tác với file cần vào cùng thư mục E1.
-- Kiểm tra AWS context/region, image digest, CPU/memory requests, concurrency, DB mode, queue URL, visibility timeout và DLQ. Giữ chúng cố định. Không có producer/consumer khác; queue và DLQ phải rỗng trước từng lượt, không purge.
-- Chuẩn bị đủ CPU, memory, pod/IP capacity cho 10 worker. Giữ node ổn định; kiểm tra Pending và node count. Collector không tự đảm bảo điều kiện capacity này.
-- Dùng [run.sh](run.sh) **từng nhóm lệnh**, không chạy cả file: lưu Helm values và replica gốc → chuyển sang Fixed → CPU-HPA → KEDA → khôi phục. Các file baseline ở `../../.generated/e1/` có thể nhạy cảm, không chia sẻ/ghi đè. Kiểm tra tên, label, owner và autoscaler trỏ tới worker trước khi xóa hoặc chuyển nhánh. Trong mỗi nhánh chỉ chạy một cơ chế điều khiển replica. Sau mỗi nhánh chờ queue drain trước khi chuyển.
-- HPA/KEDA cần trở về **1 desired/Ready** trước mỗi lượt; có thể phải chờ scale-down. Fixed cần 2 Ready. `cooldownPeriod` của KEDA liên quan scale về 0, không phải quy tắc giảm N→1 của E1.
-
-Ví dụ mở Prometheus và Orders trong **hai terminal riêng**:
+Cần `kubectl`, Helm 4, AWS CLI, Python 3, k6, Prometheus và quyền truy cập SQS/EKS. Kiểm tra context/region, thông số trong các YAML và Orders chart. Dừng nếu có HPA hoặc ScaledObject khác đang quản lý `orders-worker`; không xóa tài nguyên không thuộc lượt này. Kiểm tra queue/DLQ rỗng và không có producer/consumer khác. Các tên E1 phải chưa được tài nguyên khác sử dụng.
 
 ```bash
-kubectl --context twolevel-dev -n monitoring port-forward service/monitoring-kube-prometheus-prometheus 9090:9090
-kubectl --context twolevel-dev -n retailstore port-forward service/orders 8082:80
+kubectl --context twolevel-dev -n retailstore get deployment orders-worker
+kubectl --context twolevel-dev -n retailstore get hpa,scaledobjects
+kubectl --context twolevel-dev get nodes -o wide
+kubectl --context twolevel-dev get nodepool e1-orders --ignore-not-found
+kubectl --context twolevel-dev get ec2nodeclass e1-orders --ignore-not-found
+kubectl --context twolevel-dev -n retailstore get scaledobject e1-orders-sqs --ignore-not-found
+kubectl --context twolevel-dev -n retailstore get triggerauthentication e1-orders-sqs-auth --ignore-not-found
+helm status e1-capacity -n karpenter --kube-context twolevel-dev
 ```
 
-## Một lượt đo
-
-Ví dụ Fixed + Step, lần 1. Đổi `--variant` thành `fixed`, `hpa` hoặc `keda`; `--profile` thành `steady`, `step` hoặc `burst`; tăng `--attempt` cho mỗi lượt. Lệnh tạo hồ sơ mới, từ chối ghi đè. Giá trị mặc định là context `twolevel-dev`, namespace `retailstore`, Deployment `orders-worker`, queue `orders-queue`, region `us-east-1`; xem `python init.py init --help` để đổi.
+`helm status` có thể báo release chưa tồn tại. Kiểm tra thêm IAM KEDA, queue, monitoring và requests worker. Lưu baseline riêng; không ghi đè file có sẵn:
 
 ```bash
-python init.py init --variant fixed --profile step --attempt 1
-RUN_DIR=../results/E1/E1-fixed-step-r01
+umask 077
+mkdir -p ../../.generated/e1
+ test ! -e ../../.generated/e1/orders-original-values.yaml && helm get values orders \
+  -n retailstore --kube-context twolevel-dev -o yaml > ../../.generated/e1/orders-original-values.yaml
+ test ! -e ../../.generated/e1/orders-original-replicas.txt && kubectl --context twolevel-dev \
+  -n retailstore get deployment orders-worker -o jsonpath='{.spec.replicas}' > ../../.generated/e1/orders-original-replicas.txt
+ test -s ../../.generated/e1/orders-original-values.yaml && test -s ../../.generated/e1/orders-original-replicas.txt
 ```
 
-Trong terminal collector, đặt đúng `RUN_DIR`, chạy kiểm tra và sau đó bắt đầu thu:
+Dừng nếu bất kỳ bước lưu nào thất bại. Không purge queue. Lưu riêng giá trị thực tế, versions/commit, image digest, loại node/AZ, queue và điều kiện capacity vào `notes.md` của từng lượt.
+
+## 2. Chuẩn bị hai nhánh
+
+Tạo NodePool E1 một lần sau khi xác nhận các tên và release chưa tồn tại:
 
 ```bash
-RUN_DIR=../results/E1/E1-fixed-step-r01
-python collect.py --run-dir "$RUN_DIR" --check
-python collect.py --run-dir "$RUN_DIR"
+helm template e1-capacity ../../kubernetes/charts/platform-config \
+  -n karpenter -f ../../kubernetes/environments/dev/platform.yaml -f ./karpenter-values.yaml
+helm install e1-capacity ../../kubernetes/charts/platform-config \
+  -n karpenter --kube-context twolevel-dev \
+  -f ../../kubernetes/environments/dev/platform.yaml -f ./karpenter-values.yaml --wait --timeout 900s
+kubectl --context twolevel-dev wait --for=condition=Ready ec2nodeclass/e1-orders nodepool/e1-orders --timeout=900s
 ```
 
-Collector kiểm tra nhánh, số Pod Ready, autoscaler, queue worker, SQS/DLQ và Prometheus; chờ dòng **ĐANG THU**, sau đó thu baseline 15–30 giây. Kiểm tra cũng cần quyền AWS/kubectl và KEDA CRD. Collector chỉ đọc tài nguyên, không apply/scale/purge.
-
-Trong terminal khác, đặt cùng `RUN_DIR`, chạy k6 và lưu summary. Giữ `WORK_UNITS`, `DB_MODE`, `BATCH_SIZE`, rate và thời lượng như nhau giữa các chiến lược; đổi profile cho đúng hồ sơ:
+**Warm:** sau khi xác nhận requests của `warm-capacity.yaml` khớp worker và quota đủ, chuẩn bị node rồi xóa Pod giữ chỗ. Kiểm tra cả allocatable, requests đã dùng, Pod/IP còn trống và số node còn Ready sau khi xóa.
 
 ```bash
-RUN_DIR=../results/E1/E1-fixed-step-r01
-k6 run --summary-export "$RUN_DIR/raw/k6-summary.json" ./step.js
+kubectl --context twolevel-dev -n retailstore apply -f ./warm-capacity.yaml
+kubectl --context twolevel-dev -n retailstore rollout status deployment/e1-warm-capacity --timeout=900s
+kubectl --context twolevel-dev get nodes -l karpenter.sh/nodepool=e1-orders -o wide
+kubectl --context twolevel-dev -n retailstore get deployment e1-warm-capacity --show-labels
+kubectl --context twolevel-dev -n retailstore delete deployment e1-warm-capacity --wait=true
+kubectl --context twolevel-dev -n retailstore get pods -l app=e1-warm-capacity
 ```
 
-Steady dùng hồ sơ `--profile steady` và `./stead.js`. Step và Steady không nhận `LOW_RATE`/`HIGH_RATE`; không truyền `PROFILE` cho bất kỳ script nào. Burst dùng hồ sơ `--profile burst` và `./burst.js`; bắt buộc truyền `HIGH_RATE` là số nguyên lớn hơn 5, không truyền `LOW_RATE`. Các mặc định `WORK_UNITS=100`, `DB_MODE=light`, `BATCH_SIZE=1`, `VUS=50`, `BASE_URL=http://localhost:8082` được dùng nếu không truyền. Summary lưu phiên bản workload, rate, batch size, work units, DB mode và profile thực tế; report từ chối nếu profile không khớp hồ sơ. K6 ghi mốc UTC vào console và summary (`workload_started_at_unix_ms`, `workload_finished_at_unix_ms`). Mốc bắt đầu là setup, xấp xỉ lúc scenario bắt đầu; mốc kết thúc là sau các iteration đang chạy, không bao gồm drain. Ghi các biến và mốc pha thực tế vào `notes.md`; dừng cưỡng bức có thể không ghi được mốc kết thúc.
+**Elastic:** không tạo warm-capacity. Bắt đầu từ NodePool E1 chưa có node worker nhàn rỗi; sau bước triển khai bên dưới, chờ đúng một worker Ready. Ghi capacity còn lại. Nếu workload không tạo được Pod Unschedulable và node mới, không mặc định lượt đã chứng minh provisioning; pilot và điều chỉnh thiết kế trước lượt chính thức. Để đổi nhánh phải xử lý/khôi phục tài nguyên của lượt trước, không để node warm còn lại làm sai điều kiện elastic.
 
-Ví dụ cho hai profile còn lại, sau khi tạo hồ sơ và đặt `RUN_DIR` tương ứng:
+Áp dụng worker và KEDA giống nhau ở cả hai nhánh:
 
 ```bash
-k6 run --summary-export "$RUN_DIR/raw/k6-summary.json" ./stead.js
-# Pilot Burst, mức đỉnh tạm chốt 40/s:
-k6 run -e HIGH_RATE=40 \
-  --summary-export "$RUN_DIR/raw/k6-summary.json" ./burst.js
+helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart \
+  -n retailstore --kube-context twolevel-dev \
+  -f ../../.generated/e1/orders-original-values.yaml -f ./autoscaled-values.yaml \
+  --server-side=false --wait --timeout 900s
+kubectl --context twolevel-dev -n retailstore apply -f ./keda.yaml
+kubectl --context twolevel-dev -n retailstore wait --for=condition=Ready scaledobject/e1-orders-sqs --timeout=300s
+kubectl --context twolevel-dev -n retailstore get hpa,scaledobjects,deployments,pods -o wide
+kubectl --context twolevel-dev get nodes,nodeclaims -l karpenter.sh/nodepool=e1-orders -o wide
 ```
 
-Chạy từng lệnh với hồ sơ riêng, không chạy cả hai vào cùng `RUN_DIR`.
+`--server-side=false` dành cho Helm 4; nếu vẫn có conflict/rollout lỗi, dừng và kiểm tra managed fields, autoscaler và baseline trước khi tiếp tục. Không dùng `--force-conflicts` tự động. Chờ KEDA ổn định ở 1 desired/Ready worker, queue drain, Prometheus có target worker UP. Ghi điều kiện đầu và xác nhận warm đủ capacity hoặc elastic chưa giữ node dự phòng; `collect.py --check` không thể tự chứng minh toàn bộ các điều kiện này.
 
-Sau khi k6 kết thúc, **tiếp tục thu ít nhất 300 giây** để mọi lượt có cùng cửa sổ so sánh tài nguyên. Đồng thời chờ queue drain: visible, in-flight, delayed đều 0 qua ít nhất ba mẫu liên tiếp, đối chiếu DLQ và task thành công. Nếu chưa drain sau 300 giây, tiếp tục thu đến khi drain; không purge. Sau đó nhấn Ctrl+C **một lần** ở collector và chờ ghi xong. Lập báo cáo:
+## 3. Chạy một lượt với hai terminal
+
+Ví dụ **warm-step-r01**. Đổi `warm` thành `elastic`, `step` thành `burst`/`steady`, và đổi attempt ở cả `RUN_DIR` lẫn lệnh init cho các lượt tiếp theo. Không ghi đè thư mục cũ. Lệnh sau chạy trong E1.
+
+**Terminal 1:** mở Prometheus port-forward và giữ tiến trình nền, sau đó tạo hồ sơ và bắt đầu thu:
 
 ```bash
-python report.py --run-dir "$RUN_DIR"
+kubectl --context twolevel-dev -n monitoring port-forward service/monitoring-kube-prometheus-prometheus 9090:9090 &
+PROM_PID=$!
+RUN_DIR=../results/E1/E1-warm-step-r01
+bash ./run.sh init --variant warm --profile step --attempt 1
+bash ./run.sh collect --run-dir "$RUN_DIR" --check
+bash ./run.sh collect --run-dir "$RUN_DIR"
 ```
 
-`report.json` không ghi đè. Mặc định `--after 300` tính tài nguyên trong cửa sổ từ bắt đầu k6 đến 300 giây sau khi k6 kết thúc; giữ cùng giá trị cho mọi lượt. Drain được xét trên toàn bộ mẫu thu sau k6. Nếu thay đổi `--after`, phải thu ít nhất đúng khoảng đó ở mọi lượt và ghi lại trong `notes.md`.
+Chờ dòng `ĐANG THU`, sau đó đợi ít nhất **75 giây baseline** để report mặc định tính cả idle. Nếu `--check` báo lỗi, xử lý trước khi chạy collector và workload.
 
-## Output và cách đọc
-
-Mỗi hồ sơ ở `../results/E1/` gồm `metadata.json`, `notes.md`, `raw/k6-summary.json`, `collection.json`, `collection-summary.md`, các mẫu SQS/worker trong `metrics/` và `events/`, metric Prometheus theo thời gian trong `metrics/`, và `report.json`. Thư mục results bị Git bỏ qua; sao lưu riêng nếu cần. File `collect-errors.jsonl` chỉ xuất hiện khi có lỗi thu.
-
-Báo cáo có accepted jobs, throughput thành công trung bình trong lúc k6 phát tải, số task theo status, p50/p95/p99 E2E, peak visible + in-flight, thời gian xác nhận drain, ready Pod-minutes, CPU trung bình và thời điểm scale-out đầu tiên từ lúc bắt đầu, cũng như sau đầu bậc cao nhất của Step/Burst. Mốc đỉnh ước lượng từ setup + 360 giây cho Step version 3, + 180 giây cho Step version 2, + 60 giây cho Burst và Step version 1; không phải timestamp thực đo của pha. So sánh thêm timeline từng bậc vì Step có thể scale trước đỉnh. Giữ raw data để vẽ đồ thị và đối chiếu desired/ready, Pending và node. Report không tự chấm lượt hợp lệ.
-
-- SQS counts và drain là xấp xỉ. Drain là mốc xác nhận sau **ba mẫu 0**, không phải thời điểm chính xác queue rỗng; queue rỗng không chứng minh mọi job đã thành công.
-- `completed_by_status_approx` và latency dùng cửa sổ cố định như Pod-minutes; nếu drain muộn hơn cửa sổ, dùng thêm `completed_by_status_through_drain_approx` để đối chiếu. Các bộ đếm này vẫn chỉ là ước lượng từ metric, không thay thế đối soát job ID.
-- Counter là chênh lệch các mẫu **nằm trong cửa sổ**; có thể thiếu đầu series, pod sống ngắn hoặc dữ liệu khi pod bị xóa. Histogram E2E của worker gồm cả error/duplicate; phân vị là ước lượng bucket, `null` khi thiếu dữ liệu hoặc vượt bucket hữu hạn. Không coi các giá trị này là đối soát job ID.
-- Kiểm tra `collection.json` và warnings, k6 failed/dropped iterations, success/error/duplicate, DLQ, target Prometheus, image, node, Pending và mức coverage trước khi kết luận. Nếu thiếu metric, queue chưa drain, node thay đổi hoặc workload không đạt, ghi nguyên nhân và đánh giá lại lượt; không thay giá trị thiếu bằng 0.
-- Với pilot, đề xuất không có dropped iteration hoặc request lỗi và số accepted đạt ít nhất 98% dự kiến ở từng pha; ngưỡng này là quy ước để thẩm định tải, không phải bảo đảm hệ thống. Summary k6 chỉ cho tổng cả lượt: cần xuất metrics theo thời gian hoặc dùng producer metrics và các mốc pha để kiểm tra từng pha. Nếu không đủ dữ liệu, ghi chưa xác minh; không suy từ tổng lượt. Kiểm tra producer, DB và node có chịu được mức Burst đã chọn trước khi chốt.
-- Chạy pilot trước để xác nhận tải phân biệt được các nhánh và giữ kết quả pilot riêng. Khi chốt cấu hình, chạy ít nhất **3 lượt hợp lệ cho mỗi strategy × profile**, cùng workload và cửa sổ. Step/Burst là chính; Steady làm tham chiếu. Tổng hợp trung vị, khoảng biến thiên, throughput, p95, peak backlog, drain và Pod-minutes.
-- Step version 1 là bước nhảy cũ, version 2 là bảy bậc × 1 phút, version 3 là bảy bậc × 2 phút như trên. Không gộp các version trong cùng phép so sánh. Report ghi version; summary cũ không có version được nhận là version 1. So sánh report đã tạo trước thay đổi cần kiểm tra version thủ công hoặc tạo lại từ raw data.
-
-Sau khi tự đánh giá lượt hợp lệ, có thể dùng [compare.py](compare.py) để in bảng trung vị và min–max của các lượt **cùng profile**. Truyền đường dẫn `report.json` của từng lượt được chọn; ví dụ với một lượt mỗi nhánh (lượt chính thức nên có ít nhất ba mỗi nhánh):
+**Terminal 2:** mở Orders port-forward, rồi phát tải đúng profile và RUN_DIR:
 
 ```bash
-python compare.py \
-  ../results/E1/E1-fixed-step-r01/report.json \
-  ../results/E1/E1-hpa-step-r01/report.json \
-  ../results/E1/E1-keda-step-r01/report.json
+kubectl --context twolevel-dev -n retailstore port-forward service/orders 8082:80 &
+ORDERS_PID=$!
+RUN_DIR=../results/E1/E1-warm-step-r01
+bash ./run.sh load step "$RUN_DIR"
 ```
 
-Script kiểm tra profile, tham số workload và cửa sổ trùng nhau, nhưng không tự xác nhận các lượt hợp lệ hay cùng image/node. Đối chiếu warnings, điều kiện và dữ liệu gốc trước khi dùng bảng.
+`load` kiểm tra metadata/profile và collector đang chạy; từ chối ghi đè summary. Sau khi k6 dừng, tiếp tục thu ít nhất **60 giây**, lâu hơn nếu queue chưa drain. Kiểm tra nhiều mẫu visible/in-flight/delayed, DLQ và job; khi đã quan sát đủ, nhấn **Ctrl+C một lần** tại terminal collector, chờ quá trình xuất Prometheus kết thúc. Mỗi terminal dừng port-forward của chính nó khi xong bằng `kill "$PROM_PID"` hoặc `kill "$ORDERS_PID"` tương ứng.
 
-## Kết quả
+## 4. Báo cáo
 
-| Profile | Chiến lược | Run ID | Accepted / success | p95 E2E | Peak backlog | Drain | Ready Pod-minutes | Hợp lệ / ghi chú |
-|---|---|---|---|---|---|---|---|---|
-| | | | | | | | | |
+```bash
+RUN_DIR=../results/E1/E1-warm-step-r01
+bash ./run.sh report --run-dir "$RUN_DIR"
+```
 
-E1 hiện chưa có kết quả chính thức. Sau các lượt đo, ghi số liệu và kết luận dựa trên cùng cửa sổ, không suy ra kết quả trước khi chạy.
+Mặc định report dùng 60 giây trước tải cho Node-minutes và 60 giây sau tải; có thể đổi `--before`/`--after` nhưng phải thu đủ dữ liệu và giữ cùng cửa sổ khi so sánh. Node-minutes xấp xỉ từ các mẫu node Kubernetes thuộc `e1-orders`, gồm idle trong cửa sổ, không phải thời gian EC2 tính phí; Pod-minutes và metric xử lý tính từ lúc bắt đầu tải. Thời gian chuẩn bị warm trước cửa sổ được ghi riêng. Báo cáo không ghi đè `report.json` có sẵn.
+
+```bash
+bash ./run.sh compare ../results/E1/E1-warm-step-r01/report.json \
+  ../results/E1/E1-elastic-step-r01/report.json
+```
+
+Chỉ so sánh cùng profile, thông số workload, cấu hình worker/queue và cửa sổ. Kiểm tra `collection-summary.md`, `report.json`, `events/collect-topology-samples.jsonl`, Pod conditions và scheduler events để xác định Pending do thiếu capacity và liên kết Pod/NodeClaim/node; các timestamp mẫu có sai số, `N/A` là thiếu dữ liệu chứ không phải 0. SQS là ước lượng; percentile histogram có thể gồm error/duplicate và thiếu Pod sống ngắn; counters không thay cho đối chiếu job ID. Collector không tự xác nhận lượt hợp lệ hay thu đủ log mọi Pod đã biến mất. Đánh giá thủ công và ghi bằng chứng, lý do, lỗi, dropped iterations và drain trong `notes.md`.
+
+Theo kế hoạch nên có ba lượt hợp lệ cho mỗi nhánh × profile khi điều kiện cho phép; Step/Burst là chính, Steady làm tham chiếu. Có thể dùng lượt E2 cho elastic nếu workload, điều kiện đầu và cửa sổ trùng; ghi run ID nguồn.
+
+## 5. Khôi phục
+
+Sau khi dừng tải và xác nhận drain, kiểm tra lại owner và chắc chắn chỉ tài nguyên E1 đang trỏ tới worker. Các lệnh sau chỉ dành cho tài nguyên do lượt này tạo; nếu owner/tên khác hoặc baseline thiếu, dừng để kiểm tra.
+
+```bash
+kubectl --context twolevel-dev -n retailstore get scaledobject e1-orders-sqs --show-labels
+kubectl --context twolevel-dev -n retailstore delete scaledobject e1-orders-sqs --wait=true
+kubectl --context twolevel-dev -n retailstore get hpa e1-orders-keda-hpa --ignore-not-found
+# Nếu HPA còn tồn tại, chờ xóa trước bước tiếp theo:
+kubectl --context twolevel-dev -n retailstore wait --for=delete hpa/e1-orders-keda-hpa --timeout=120s
+kubectl --context twolevel-dev -n retailstore get triggerauthentication e1-orders-sqs-auth --show-labels
+kubectl --context twolevel-dev -n retailstore delete triggerauthentication e1-orders-sqs-auth --wait=true
+ test -s ../../.generated/e1/orders-original-values.yaml && test -s ../../.generated/e1/orders-original-replicas.txt
+helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart \
+  -n retailstore --kube-context twolevel-dev -f ../../.generated/e1/orders-original-values.yaml \
+  --server-side=false --wait --timeout 900s
+kubectl --context twolevel-dev -n retailstore scale deployment/orders-worker --replicas="$(cat ../../.generated/e1/orders-original-replicas.txt)"
+kubectl --context twolevel-dev -n retailstore rollout status deployment/orders-worker --timeout=900s
+```
+
+Kiểm tra worker đã rời node E1, các node không còn workload cần giữ và release thuộc E1 trước khi gỡ NodePool. Gỡ release có thể chấm dứt EC2 và làm gián đoạn Pod trên node đó:
+
+```bash
+helm status e1-capacity -n karpenter --kube-context twolevel-dev
+kubectl --context twolevel-dev get nodes,nodeclaims -l karpenter.sh/nodepool=e1-orders -o wide
+helm uninstall e1-capacity -n karpenter --kube-context twolevel-dev --wait --timeout 900s
+kubectl --context twolevel-dev get nodes,nodeclaims -l karpenter.sh/nodepool=e1-orders
+```
+
+Giữ file baseline và kết quả nếu còn lượt khác hoặc khôi phục chưa hoàn tất. Kiểm tra node/NodeClaim và EC2 thực tế đã được thu hồi; không gỡ KEDA/Karpenter controller hay node hệ thống.

@@ -11,7 +11,7 @@ from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("experiment_collect", ROOT / "experiments/_shared/collect.py")
+SPEC = importlib.util.spec_from_file_location("experiment_collect", ROOT / "experiments/E0/collect.py")
 collect = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(collect)
 
@@ -152,11 +152,11 @@ class CollectorTests(unittest.TestCase):
                 collect.load_run(directory)
             self.assertEqual((directory / "metrics/collect-sqs-samples.jsonl").read_text(), "keep")
 
-    def test_queries_scope_worker_and_preserve_histogram_buckets(self):
+    def test_queries_scope_worker_and_preserve_raw_counters(self):
         q = collect.queries(target())
         self.assertIn('namespace="retailstore"', q["worker_tasks_processed_total"])
         self.assertIn('pod=~"orders', q["worker_tasks_processed_total"])
-        self.assertIn("worker_job_e2e_latency_seconds_bucket", q)
+        self.assertNotIn("worker_job_e2e_latency_seconds_bucket", q)
         self.assertNotIn("rate(", q["worker_tasks_processed_total"])
         for bad in ("http://user:pass@localhost", "file:///secret", "http://localhost/?token=x"):
             with self.assertRaises(argparse.ArgumentTypeError):

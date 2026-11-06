@@ -1,0 +1,10 @@
+worker:
+  externalAutoscaling: true
+  nodeSelector:
+    karpenter.sh/nodepool: e4-orders
+  resources:
+    requests:
+      cpu: 128m
+      memory: 256Mi
+  scaledObject:
+    enabled: false

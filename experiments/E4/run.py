@@ -72,6 +72,10 @@ def git_snapshot(repo_root):
 
 
 def init_run(args, *, repo_root=REPO_ROOT):
+    variants = {"E4": ("pod-zero", "node-zero")}
+    allowed = variants.get(args.scenario)
+    if allowed and args.variant not in allowed:
+        raise ValueError(f"{args.scenario} chỉ hỗ trợ variant: {', '.join(allowed)}")
     run_id = f"{args.scenario}-{args.variant}-{args.profile}-r{args.attempt:02d}"
     scenario_dir = args.results_dir / args.scenario
     run_dir = scenario_dir / run_id
@@ -83,6 +87,7 @@ def init_run(args, *, repo_root=REPO_ROOT):
 
     metadata = {
         "schema_version": 1,
+        "design_revision": "zero-prewarm-v1",
         "run_id": run_id,
         "scenario": args.scenario,
         "variant": args.variant,
@@ -164,15 +169,15 @@ def parser():
     result = argparse.ArgumentParser(description=__doc__)
     sub = result.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
-    init.add_argument("--scenario", required=True, choices=[f"E{i}" for i in range(6)])
-    init.add_argument("--variant", required=True, type=token, help="ví dụ fixed, hpa, keda, warm")
-    init.add_argument("--profile", required=True, type=token, help="ví dụ steady, step, burst")
+    init.add_argument("--scenario", default="E4", choices=["E4"])
+    init.add_argument("--variant", required=True, choices=['pod-zero', 'node-zero'])
+    init.add_argument("--profile", required=True, choices=["idle", "steady", "step", "burst"])
     init.add_argument("--attempt", required=True, type=attempt)
-    init.add_argument("--context", required=True, type=nonempty)
-    init.add_argument("--namespace", required=True, type=kube_name)
-    init.add_argument("--deployment", required=True, type=kube_name)
-    init.add_argument("--queue", required=True, type=queue_name, help="tên queue, không nhập URL hoặc credential")
-    init.add_argument("--region", required=True, type=nonempty)
+    init.add_argument("--context", default="twolevel-dev", type=nonempty)
+    init.add_argument("--namespace", default="retailstore", type=kube_name)
+    init.add_argument("--deployment", default="orders-worker", type=kube_name)
+    init.add_argument("--queue", default="orders-queue", type=queue_name, help="tên queue, không nhập URL hoặc credential")
+    init.add_argument("--region", default="us-east-1", type=nonempty)
     init.add_argument("--results-dir", type=Path, default=DEFAULT_RESULTS, help="thư mục kết quả; mặc định experiments/results")
 
     inspect = sub.add_parser("inspect", help="chỉ đọc namespace, deployment và autoscaler của target")

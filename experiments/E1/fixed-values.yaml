@@ -1,5 +1,0 @@
-worker:
-  externalAutoscaling: false
-  replicaCount: 2
-  scaledObject:
-    enabled: false

@@ -1,0 +1,21 @@
+{
+  "run_id": "",
+  "configuration": "",
+  "workload": "",
+  "region": "",
+  "currency": "USD",
+  "price_date": "",
+  "price_source": "",
+  "source_run": "",
+  "success_count_method": "",
+  "window_start": "",
+  "window_end": "",
+  "processed_success": null,
+  "instances": [{
+    "instance_type": "",
+    "capacity_type": "on-demand",
+    "node_seconds": null,
+    "idle_node_seconds": null,
+    "hourly_price": null
+  }]
+}
