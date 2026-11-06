@@ -1,6 +1,6 @@
 # Two-Level Autoscaling for Event-Driven Microservices
 
-This repository is the infrastructure and orchestration hub for the **Two-Level Autoscaling on Amazon EKS** project. It contains Terraform for AWS infrastructure and optional monitoring, plus Kubernetes manifests for application deployment.
+This repository is the infrastructure and orchestration hub for the **Two-Level Autoscaling for Event-Driven Microservices on Amazon EKS** project. It contains Terraform for AWS infrastructure and optional monitoring, plus Kubernetes manifests for application deployment.
 
 ## Project Overview
 
@@ -12,9 +12,11 @@ The architecture implements a two-level elasticity model:
 
 This repository provisions the underlying AWS platform and coordinates the deployment, scaling policies, and benchmarking experiments across the entire ecosystem.
 
-## System Architecture
+## System Architecture & Workflow
 
 ![System Architecture](assets/infrastructure.png)
+
+![Workflow](assets/workflow.png)
 
 **Core Data Flow:** 
 `Traffic (k6)` → `Producer API` → `Amazon SQS` → `Worker Pods (Scaled by KEDA)` → `EC2 Nodes (Provisioned by Karpenter)`
