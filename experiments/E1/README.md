@@ -16,7 +16,7 @@ Mọi lệnh dưới đây chạy từ `experiments/E1` trong Git Bash. Mỗi te
 | `collect.py`, `snapshot.py` | `collect.py` thu SQS, Prometheus, Pod, Node/NodeClaim/event; `snapshot.py` là công cụ Kubernetes chỉ đọc bổ sung, không bắt buộc |
 | `report.py`, `compare.py` | Tóm tắt một lượt và so sánh các report cùng workload/cửa sổ |
 
-Các giá trị trên là **cấu hình đề xuất trong repo, chưa xác nhận trên cluster**. E1 đặt CPU request worker thành **500m** thay cho mức 128m đã dùng trong E0, nhằm làm rõ giới hạn scheduling trên node 2 vCPU; cả hai nhánh đều dùng cùng request này. Thay đổi request có thể ảnh hưởng chia sẻ CPU, nên cần pilot lại throughput trước khi dùng ước lượng μ từ E0. Cấu hình vẫn không bảo đảm workload sẽ tạo Pending: phải kiểm chứng bằng dữ liệu. Hai nhánh phải cùng image/digest, requests/limits, concurrency, queue, KEDA, loại node và workload; ghi cả khác biệt không kiểm soát. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet, AMI, IP và chi phí; warm có thể tạo nhiều node, và `Never` giữ node sau khi hết tải.
+Các giá trị trên là **cấu hình trong repo**; kiểm tra cấu hình thực tế trên cluster trước mỗi lượt. E1 đặt CPU request worker thành **500m** thay cho mức 128m đã dùng trong E0, nhằm làm rõ giới hạn scheduling trên node 2 vCPU; cả hai nhánh đều dùng cùng request này. Thay đổi request có thể ảnh hưởng chia sẻ CPU, nên cần pilot lại throughput trước khi dùng ước lượng μ từ E0. Cấu hình vẫn không bảo đảm workload sẽ tạo Pending: phải kiểm chứng bằng dữ liệu. Hai nhánh phải cùng image/digest, requests/limits, concurrency, queue, KEDA, loại node và workload; ghi cả khác biệt không kiểm soát. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet, AMI, IP và chi phí; warm có thể tạo nhiều node, và `Never` giữ node sau khi hết tải.
 
 ## 1. Kiểm tra và lưu baseline
 
@@ -164,3 +164,33 @@ kubectl --context twolevel-dev get nodes,nodeclaims -l karpenter.sh/nodepool=e1-
 ```
 
 Giữ file baseline và kết quả nếu còn lượt khác hoặc khôi phục chưa hoàn tất. Kiểm tra node/NodeClaim và EC2 thực tế đã được thu hồi; không gỡ KEDA/Karpenter controller hay node hệ thống.
+
+## 6. Kết quả E1
+
+E1 đã chạy hai lượt cho mỗi nhánh và profile. Warm bắt đầu với **4 node E1**, Elastic với **1 node E1**; cả hai bắt đầu với **1 worker Ready**. Các lượt dùng cùng image worker, CPU request `500m`, concurrency `1` và cùng workload trong mỗi profile. Step tăng từ 5 lên 20 request/s theo bậc; Burst tăng từ 5 lên 40 request/s trong 30 giây rồi trở về 5 request/s.
+
+| Profile | Nhánh | Lượt | Node E1 đầu → cao nhất | Đỉnh queue ≈ | p95 E2E ≈ (s) | Node-phút ≈ |
+|---|---|---|---:|---:|---:|---:|
+| Step | Warm | r01 | 4 → 4 | 50 | 1,39 | 36,00 |
+| Step | Warm | r02 | 4 → 4 | 103 | 4,50 | 36,01 |
+| Step | Elastic | r01 | 1 → 1 | 24 | 0,25 | 9,00 |
+| Step | Elastic | r02 | 1 → 2 | 47 | 1,11 | 14,91 |
+| Burst | Warm | r01 | 4 → 4 | 626 | 27,02 | 18,00 |
+| Burst | Warm | r02 | 4 → 4 | 545 | 18,51 | 18,02 |
+| Burst | Elastic | r01 | 1 → 4 | 881 | 53,80 | 8,27 |
+| Burst | Elastic | r02 | 1 → 4 | 714 | 29,09 | 8,39 |
+
+Đỉnh queue là tổng visible và in-flight lớn nhất quan sát được từ các mẫu SQS. p95 là ước lượng từ histogram E2E của worker. Node-phút tính theo node Kubernetes thuộc NodePool E1, trong cửa sổ từ 60 giây trước đến 60 giây sau tải; **không phải chi phí EC2** và chưa bao gồm toàn bộ thời gian chuẩn bị hoặc giữ node ngoài cửa sổ.
+
+Ở Burst, cả hai lượt Elastic có Pod không xếp lịch được do thiếu CPU request và Karpenter tạo thêm ba node. Theo mẫu collector, Warm đạt 10 worker Ready sớm hơn khoảng **39 giây ở r01** và **34 giây ở r02**. Warm vẫn có backlog vì việc scale và khởi động Pod cần thời gian. Ở Step, Elastic r01 không cần node mới, còn r02 tạo thêm một node; hai lượt Elastic có p95 và đỉnh queue quan sát thấp hơn Warm.
+
+Cả tám lượt có 100% request được API chấp nhận theo check k6, nhưng điều này không xác nhận mọi job đã hoàn thành. Counter success chưa khớp số job được nhận và có thể thiếu dữ liệu từ Pod mới hoặc sống ngắn; chưa đối soát theo job ID. SQS và histogram là ước lượng, CPU chưa đủ dữ liệu đồng đều để so sánh chắc chắn. Các report vẫn ghi `validity: not_assessed`; cần xem [kết quả gốc](../results/E1/) và hoàn thiện `notes.md` khi đánh giá chính thức.
+
+### Trung bình và kết luận
+
+Bảng sau lấy **trung bình số học của hai lượt** cho từng nhánh và profile; đây là kết quả thăm dò, chưa đủ để khẳng định khác biệt ổn định.
+
+| Profile | p95 Warm / Elastic ≈ (s) | Đỉnh queue Warm / Elastic ≈ | Node-phút Warm / Elastic ≈ | Kết luận từ các lượt đã chạy |
+|---|---:|---:|---:|---|
+| Step | 2,94 / 0,68 | 76,5 / 35,5 | 36,01 / 11,96 | Elastic có p95 và đỉnh queue quan sát thấp hơn; Warm giữ nhiều capacity hơn. |
+| Burst | 22,77 / 41,45 | 585,5 / 797,5 | 18,01 / 8,33 | Warm đạt p95 và đỉnh queue thấp hơn, đổi lại sử dụng nhiều node-phút hơn. |
