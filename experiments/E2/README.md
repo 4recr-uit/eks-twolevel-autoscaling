@@ -14,7 +14,7 @@ Mọi lệnh bên dưới thực hiện từ `experiments/E2` trong **mỗi** te
 
 Các cấu hình là **đề xuất trong repo, chưa được xác nhận trên cluster**. CPU request 500m khác E0 128m, cần pilot lại throughput. Không quy định bắt buộc Karpenter phải tạo node nếu còn capacity phù hợp. API, KEDA, Karpenter và monitoring cần node hệ thống độc lập; kiểm tra quota, IAM, subnet, AMI và chi phí trước khi chạy.
 
-E2 mặc định `minReplicaCount=0` và consolidation `1m`; E1 hiện dùng min 1 và consolidation `Never`. Vì vậy không dùng lại lượt E2 làm nhánh elastic của E1 với hai cấu hình mặc định này; chỉ cân nhắc khi đã thực sự thống nhất cấu hình, điều kiện đầu và cửa sổ đo, đồng thời lưu run ID nguồn.
+E2 mặc định `minReplicaCount=0` và consolidation `1m`; E1 khảo sát min 1/3/5 và dùng consolidation `Never`. Vì vậy không dùng lại lượt E2 làm nhánh elastic của E1 khi các cấu hình này khác nhau; chỉ cân nhắc khi đã thực sự thống nhất cấu hình, điều kiện đầu và cửa sổ đo, đồng thời lưu run ID nguồn.
 
 ## 1. Kiểm tra, lưu baseline và chuẩn bị
 

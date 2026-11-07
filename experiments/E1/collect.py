@@ -46,6 +46,10 @@ def load_run(directory):
         raise ValueError("metadata.json phải là JSON object")
     if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E1":
         raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E1 schema_version=1 do run.py init tạo.")
+    config = metadata.get("config", 1)
+    minimums = {1: 1, 2: 3, 3: 5}
+    if type(config) is not int or config not in minimums or metadata.get("min_workers", minimums.get(config)) != minimums[config]:
+        raise ValueError("metadata config/min_workers không hợp lệ")
     target = metadata.get("target", {})
     if not isinstance(target, dict) or not isinstance(metadata.get("run_id"), str) or not metadata["run_id"]:
         raise ValueError("metadata thiếu run_id hoặc target hợp lệ")
@@ -177,6 +181,8 @@ def queries(target):
         "published_jobs": f'app_sqs_messages_published_total{{namespace={ns},queue={queue}}}',
         "worker_tasks_processed_total": f'worker_tasks_processed_total{{{worker}}}',
         "worker_job_e2e_latency_seconds_bucket": f'worker_job_e2e_latency_seconds_bucket{{{worker}}}',
+        "worker_job_queue_wait_seconds_bucket": f'worker_job_queue_wait_seconds_bucket{{{worker}}}',
+        "worker_task_duration_seconds_bucket": f'worker_task_duration_seconds_bucket{{{worker}}}',
         "worker_cpu_counter": f'container_cpu_usage_seconds_total{{{pod_selector},container!="",container!="POD"}}',
         "worker_target_up": f'up{{{pod_selector}}}',
         "desired_replicas": f'kube_deployment_spec_replicas{{namespace={ns},deployment={dep}}}',
@@ -186,7 +192,7 @@ def queries(target):
     }
 
 
-def preflight(source, variant):
+def preflight(source, variant, config=1):
     expected = {
         "keda": {"hpa/e1-orders-keda-hpa", "scaledobjects.keda.sh/e1-orders-sqs"},
     }
@@ -194,7 +200,10 @@ def preflight(source, variant):
         raise ValueError("Variant E1 phải là warm hoặc elastic")
     controller_variant = "keda"
     worker = source.worker()
-    replicas = 1
+    minimums = {1: 1, 2: 3, 3: 5}
+    if type(config) is not int or config not in minimums:
+        raise ValueError("Config E1 phải là 1, 2 hoặc 3")
+    replicas = minimums[config]
     if worker["desired"] != replicas or worker["ready"] != replicas:
         raise ValueError(f"E1 {variant} cần {replicas} worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
@@ -203,6 +212,19 @@ def preflight(source, variant):
         raise ValueError("Chờ worker Ready và có image digest trước khi thu")
     if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e1-orders":
         raise ValueError("Worker chưa chọn NodePool e1-orders")
+    nodes = source.nodes()
+    e1_nodes = [node for node in nodes if node.get("labels", {}).get("karpenter.sh/nodepool") == "e1-orders"]
+    node_names = {node["name"] for node in e1_nodes}
+    if not node_names or any(not any(c.get("type") == "Ready" and c.get("status") == "True"
+                                    for c in node.get("conditions", [])) for node in e1_nodes):
+        raise ValueError("Node E1 chưa đủ Ready")
+    worker_nodes = {pod.get("node") for pod in worker["pods"]}
+    if None in worker_nodes or not worker_nodes.issubset(node_names):
+        raise ValueError("Worker chưa được đặt trên node E1 Ready")
+    if variant == "warm" and len(node_names) != 4:
+        raise ValueError("Warm E1 cần đúng 4 node E1 Ready")
+    if variant == "elastic" and worker_nodes != node_names:
+        raise ValueError("Elastic E1 còn node E1 không chạy worker; kiểm tra capacity trước lượt")
     controllers = source.controllers()
     if set(controllers) != expected[controller_variant]:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
@@ -216,16 +238,16 @@ def preflight(source, variant):
         trigger = triggers[0] if len(triggers) == 1 else {}
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e1"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
+                or spec.get("minReplicaCount") != replicas or spec.get("maxReplicaCount") != 10
                 or spec.get("pollingInterval", 30) != 30
                 or spec.get("cooldownPeriod", 300) != 300
-                or hpa.get("spec", {}).get("minReplicas", 1) != 1
+                or hpa.get("spec", {}).get("minReplicas", 1) != replicas
                 or hpa.get("spec", {}).get("maxReplicas") != 10
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E1 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
+            raise ValueError(f"ScaledObject/HPA E1 không đúng owner hoặc cấu hình min={replicas}, max=10, queueLength=10")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E1 chưa Ready")
@@ -261,8 +283,10 @@ def preflight(source, variant):
     values = up.get("data", {}).get("result", [])
     if len(values) < replicas or any(float(item["value"][1]) != 1 for item in values):
         raise ValueError("Prometheus chưa có đủ target worker UP")
-    return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": source.nodes(),
-            "queue": queue, "dlq": dlq, "controllers": controllers}
+    return {"observed_at_utc": utc_now(), "variant": variant, "config": config, "worker": worker, "nodes": nodes,
+            "queue": queue, "dlq": dlq, "controllers": controllers,
+            "autoscaler": {"min_replica_count": spec["minReplicaCount"], "max_replica_count": spec["maxReplicaCount"],
+                           "hpa_min_replicas": hpa["spec"].get("minReplicas", 1)}}
 
 
 def matrix_stats(data):
@@ -466,7 +490,7 @@ def main(argv=None):
         directory, metadata = load_run(args.run_dir)
         source = Source(metadata["target"], args.prometheus_url, args.request_timeout)
         print("Đang kiểm tra worker, queue/DLQ và Prometheus...", flush=True)
-        before = preflight(source, metadata.get("variant"))
+        before = preflight(source, metadata.get("variant"), metadata.get("config", 1))
         if args.check:
             print("Kiểm tra nguồn thu E1 đạt. Chưa thu dữ liệu hay chạy workload.")
             return 0

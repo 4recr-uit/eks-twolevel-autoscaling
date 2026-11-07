@@ -10,7 +10,7 @@ class ExperimentWorkdirTests(unittest.TestCase):
     def test_scenarios_have_local_tools_and_configuration(self):
         expected = {
             "E0": ("run.py", "run.sh", "collect.py", "report.py", "workload.js", "fixed-values.yaml"),
-            "E1": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda.yaml", "karpenter-values.yaml"),
+            "E1": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda-config1.yaml", "keda-config2.yaml", "keda-config3.yaml", "karpenter-values.yaml"),
             "E2": ("run.py", "run.sh", "collect.py", "report.py", "timeline.py", "keda.yaml", "karpenter-values.yaml"),
             "E3": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "hpa.yaml", "keda.yaml"),
             "E4": ("run.py", "run.sh", "collect.py", "report.py", "first_job.py", "keda.yaml"),
