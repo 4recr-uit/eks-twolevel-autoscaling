@@ -101,6 +101,15 @@ def summarize(directory, after=60, before=60):
     collection = read_json(directory / "collection.json")
     initial = read_json(directory / "events/collect-before.json")
     initial_worker = initial.get("worker", {})
+    config = metadata.get("config", 1)
+    minimums = {1: 1, 2: 3, 3: 5}
+    if type(config) is not int or config not in minimums or metadata.get("min_workers", minimums.get(config)) != minimums[config]:
+        raise ValueError("metadata config/min_workers không hợp lệ")
+    autoscaler = initial.get("autoscaler")
+    if ((config != 1 or autoscaler is not None) and (not isinstance(autoscaler, dict)
+            or autoscaler.get("min_replica_count") != minimums[config]
+            or autoscaler.get("hpa_min_replicas") != minimums[config])):
+        raise ValueError("Snapshot autoscaler không xác nhận mức worker tối thiểu")
     configuration = {"queue_name": metadata.get("target", {}).get("queue_name"),
                      "region": metadata.get("target", {}).get("aws_region"),
                      "node_selector": initial_worker.get("node_selector"),
@@ -150,6 +159,10 @@ def summarize(directory, after=60, before=60):
     if not buckets:
         warnings.append("missing_latency_histogram")
     latency = {f"p{int(q * 100)}": histogram_quantile(buckets, q) for q in (.5, .95, .99)}
+    queue_wait_buckets = count_by_label(matrix(directory, "worker_job_queue_wait_seconds_bucket"), "le", start, end)
+    duration_buckets = count_by_label(matrix(directory, "worker_task_duration_seconds_bucket"), "le", start, end)
+    queue_wait = {"p95": histogram_quantile(queue_wait_buckets, .95)} if queue_wait_buckets else None
+    task_duration = {"p95": histogram_quantile(duration_buckets, .95)} if duration_buckets else None
     if any(value is None for value in latency.values()):
         warnings.append("latency_percentile_unavailable")
     samples_path = directory / "metrics/collect-sqs-samples.jsonl"
@@ -237,7 +250,8 @@ def summarize(directory, after=60, before=60):
     if not cpu_deltas:
         warnings.append("missing_cpu_samples")
     return {
-        "run_id": metadata["run_id"], "variant": metadata["variant"], "profile": metadata["profile"], "workload": workload,
+        "run_id": metadata["run_id"], "variant": metadata["variant"], "profile": metadata["profile"],
+        "config": config, "min_workers": minimums[config], "workload": workload,
         "configuration": configuration,
         "workload_started_utc": dt.datetime.fromtimestamp(start, dt.timezone.utc).isoformat(),
         "workload_finished_utc": dt.datetime.fromtimestamp(load_end, dt.timezone.utc).isoformat(),
@@ -249,6 +263,8 @@ def summarize(directory, after=60, before=60):
         "completed_by_status_approx": completed or None,
         "completed_by_status_through_drain_approx": completed_through_drain or None,
         "latency_seconds_approx_all_statuses": latency,
+        "queue_wait_seconds_approx_all_statuses": queue_wait,
+        "task_duration_seconds_approx_all_statuses": task_duration,
         "peak_visible_plus_inflight_approx": peak,
         "drain_confirmation_seconds_approx": drain,
         "ready_pod_minutes_approx": ready_minutes,

@@ -77,7 +77,11 @@ def init_run(args, *, repo_root=REPO_ROOT):
     allowed = variants.get(args.scenario)
     if allowed and args.variant not in allowed:
         raise ValueError(f"{args.scenario} chỉ hỗ trợ variant: {', '.join(allowed)}")
-    run_id = f"{args.scenario}-{args.variant}-{args.profile}-r{args.attempt:02d}"
+    config = getattr(args, "config", 1)
+    if config not in (1, 2, 3):
+        raise ValueError("E1 chỉ hỗ trợ config 1, 2, 3")
+    prefix = "E1" if config == 1 else f"E1-config{config}"
+    run_id = f"{prefix}-{args.variant}-{args.profile}-r{args.attempt:02d}"
     scenario_dir = args.results_dir / args.scenario
     run_dir = scenario_dir / run_id
     scenario_dir.mkdir(parents=True, exist_ok=True)
@@ -93,6 +97,8 @@ def init_run(args, *, repo_root=REPO_ROOT):
         "scenario": args.scenario,
         "variant": args.variant,
         "profile": args.profile,
+        "config": config,
+        "min_workers": {1: 1, 2: 3, 3: 5}[config],
         "attempt": args.attempt,
         "prepared_at_utc": utc_now(),
         "started_at_utc": None,
@@ -174,6 +180,8 @@ def parser():
     init.add_argument("--variant", required=True, choices=["warm", "elastic"])
     init.add_argument("--profile", required=True, choices=["steady", "step", "burst"])
     init.add_argument("--attempt", required=True, type=attempt)
+    init.add_argument("--config", type=int, choices=(1, 2, 3), default=1,
+                      help="cấu hình E1: 1=min 1, 2=min 3, 3=min 5; mặc định 1")
     init.add_argument("--context", default="twolevel-dev", type=nonempty)
     init.add_argument("--namespace", default="retailstore", type=kube_name)
     init.add_argument("--deployment", default="orders-worker", type=kube_name)
