@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | :---: | :---: | :---: |
 | **E0** | Nền tảng: Worker Capacity Calibration + Workload Modeling | **Core (optional)** | Đo μ (số task/s mà 1 worker xử lý ổn định) và định nghĩa workload Steady/Step/Burst theo μ, làm cơ sở cho các kịch bản sau. | ✓ | ✓ | — |
 | **E1** | Warm Capacity vs Elastic Capacity (Node) | **Core** | So sánh Warm/Elastic và khảo sát số worker tối thiểu 1/3/5 với KEDA + Karpenter. | ✓ | ✓ | — |
-| **E2** | KEDA + Karpenter Two-Level Elasticity | **Core** | Quan sát quá trình từ backlog, KEDA tăng worker, Pod thiếu capacity đến Karpenter tạo node và worker Ready. | ✓ | ✓ | — |
+| **E2** | KEDA + Karpenter Two-Level Elasticity | **Core** | Đo đường từ spike, backlog và Pod Pending đến Karpenter provision node, Pod Ready và throughput phục hồi; phân tích độ trễ từng giai đoạn. | ✓ | ✓ | — |
 | **E3** | CPU-HPA vs KEDA trên Karpenter | **Core** | So sánh hai bộ điều khiển trên cùng workload, bắt đầu với một node worker được giữ sẵn và capacity trống tương đương. | ✓ | ✓ | — |
 | **E4** | KEDA scaling response + Scale-to-Zero (`0 → N → 0`) | **Core** | Đo vòng đời worker `0 → N → 0` trên node sẵn và first-job latency; mở rộng đo node worker về 0 nếu thực hiện. | ✓ | ✓ | — |
 | **E5** | Cold start vs Pod pre-warming (Cron) | **Advanced** | So sánh không giữ sẵn worker với giữ sẵn worker; đánh giá latency và tài nguyên idle. | — | ✓ | — |
@@ -23,7 +23,7 @@ Chú thích:
 
 Mỗi kịch bản có cấu hình, workload và công cụ cần thiết trong thư mục của chính nó; E6 tính chi phí offline từ dữ liệu và giá do người chạy cung cấp. Các workload được sao chép theo cùng định nghĩa E0; khi thay đổi một profile cần cập nhật phiên bản và đối chiếu các kịch bản liên quan. KEDA, Karpenter và thành phần hệ thống phải có nơi chạy độc lập với node worker. Ghi điều kiện đầu, xác nhận drain và giữ nguyên run ID kết quả cũ.
 
-README của từng E mô tả điều kiện, cách chạy, thu thập và khôi phục. E1 Config 1 đã có các lượt chạy; Config 2/3 chưa chạy. Cấu hình mặc định E2 (min 0, consolidation 1 phút) khác E1 (min 1/3/5, consolidation Never), nên không dùng lại lượt E2 làm E1 elastic nếu chưa thực sự đồng nhất điều kiện và cửa sổ đo.
+README của từng E mô tả điều kiện, cách chạy, thu thập và khôi phục. E1 Config 1 đã chạy Warm/Elastic với Step/Burst; Config 2/3 đã chạy Warm/Elastic với Burst. E2 có thể phân tích lại các lượt E1 Elastic Burst Config 1 để khảo sát scale-out hai tầng, giữ nguyên run ID và điều kiện E1; đây không phải lượt E2 độc lập. Cấu hình mặc định E2 (min 0, consolidation 1 phút) khác E1 (min 1/3/5, consolidation Never), nên không coi dữ liệu tái sử dụng là bằng chứng cho scale-from-zero hoặc consolidation của E2, hay gộp các lượt khác điều kiện như cùng cấu hình. Xem [thiết kế và timeline E2](E2/README.md#thiết-kế-đo-và-timeline).
 
 ### E5 — Cold start vs Pod pre-warming
 

@@ -87,7 +87,9 @@ def replica_minutes(series, start, end, step):
 def first_scale_after_high(values, start, end, profile, version):
     if profile not in ("step", "burst"):
         return None
-    offsets = {1: 60, 2: 180, 3: 360, 4: 180} if profile == "step" else {1: 60, 2: 60, 3: 60, 4: 60}
+    offsets = {1: 60, 2: 180, 3: 360, 4: 180} if profile == "step" else {1: 60, 2: 60, 3: 60, 4: 60, 5: 60}
+    if version not in offsets:
+        return None
     high_start = start + offsets[version]
     before_high = [v for t, v in values if t <= high_start]
     if not before_high:
@@ -101,12 +103,16 @@ def summarize(directory, after=60, before=60):
     collection = read_json(directory / "collection.json")
     initial = read_json(directory / "events/collect-before.json")
     initial_worker = initial.get("worker", {})
+    worker_samples = directory / "events/collect-worker-samples.jsonl"
+    observed_workers = ([json.loads(line).get("data", {}) for line in worker_samples.read_text(encoding="utf-8").splitlines() if line.strip()]
+                        if worker_samples.exists() else [])
+    image_ids = {c.get("imageID") for worker in [initial_worker, *observed_workers] for p in worker.get("pods", [])
+                 for c in p.get("containers", []) if c.get("imageID")}
     configuration = {"queue_name": metadata.get("target", {}).get("queue_name"),
                      "region": metadata.get("target", {}).get("aws_region"),
                      "node_selector": initial_worker.get("node_selector"),
                      "containers": initial_worker.get("containers"),
-                     "image_ids": sorted({c.get("imageID") for p in initial_worker.get("pods", [])
-                                          for c in p.get("containers", []) if c.get("imageID")})}
+                     "image_ids": sorted(image_ids)}
     if metadata.get("scenario") != "E2" or collection.get("status") not in ("finished", "partial"):
         raise ValueError("Cần hồ sơ E2 có collection đã kết thúc")
     if metadata.get("variant") not in ('elastic',):
@@ -118,7 +124,7 @@ def summarize(directory, after=60, before=60):
     if actual_profile != metadata.get("profile"):
         raise ValueError("PROFILE trong summary không khớp hồ sơ lượt chạy")
     version = k6.get("workload_model_version", {}).get("value", 1)
-    if version not in (1, 2, 3, 4):
+    if version not in (1, 2, 3, 4, 5) or (version == 5 and actual_profile != "burst"):
         raise ValueError("Phiên bản workload không được hỗ trợ")
     workload = {"model_version": version,
                 "low_request_per_second": k6["workload_low_rate"]["value"],
@@ -126,6 +132,10 @@ def summarize(directory, after=60, before=60):
                 "batch_size": k6["workload_batch_size"]["value"],
                 "work_units": k6["workload_work_units"]["value"],
                 "db_mode": db_codes.get(k6["workload_db_mode_code"]["value"])}
+    if version == 5:
+        workload["high_phase_duration_seconds"] = 90
+    if "workload_vus" in k6:
+        workload["load_generator_max_vus"] = k6["workload_vus"]["value"]
     if workload["db_mode"] is None:
         raise ValueError("DB mode trong summary không hợp lệ")
     start = k6["workload_started_at_unix_ms"]["value"] / 1000

@@ -22,8 +22,8 @@ spec:
     name: orders-worker
   minReplicaCount: 0
   maxReplicaCount: 10
-  pollingInterval: 30
-  cooldownPeriod: 300
+  pollingInterval: 5
+  cooldownPeriod: 150
   advanced:
     horizontalPodAutoscalerConfig:
       name: e2-orders-keda-hpa

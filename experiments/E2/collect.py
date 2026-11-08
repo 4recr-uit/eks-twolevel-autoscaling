@@ -162,6 +162,8 @@ class Source:
                  "provider_id": n.get("spec", {}).get("providerID"),
                  "labels": {k: v for k, v in n["metadata"].get("labels", {}).items()
                             if k in ("role", "node.kubernetes.io/instance-type", "topology.kubernetes.io/zone", "karpenter.sh/nodepool")},
+                 "annotations": {k: v for k, v in n["metadata"].get("annotations", {}).items()
+                                 if k == "karpenter.sh/do-not-disrupt"},
                  "allocatable": n.get("status", {}).get("allocatable", {}),
                  "conditions": n.get("status", {}).get("conditions", [])}
                 for n in self.kube("get", "nodes")["items"]]
@@ -195,14 +197,21 @@ def preflight(source, variant):
     controller_variant = "keda"
     worker = source.worker()
     replicas = worker["desired"]
-    if replicas not in (0, 1) or worker["ready"] != replicas:
-        raise ValueError("E2 cần 0 hoặc 1 worker desired/Ready trước lượt")
+    if replicas != 0 or worker["ready"] != 0:
+        raise ValueError("E2 cần 0 worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
             not p["containers"] or any(not c["ready"] or not c["imageID"] for c in p["containers"])
             for p in worker["pods"]):
         raise ValueError("Chờ worker Ready và có image digest trước khi thu")
     if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e2-orders":
         raise ValueError("Worker chưa chọn NodePool e2-orders")
+    nodes = source.nodes()
+    worker_nodes = [node for node in nodes if node.get("labels", {}).get("karpenter.sh/nodepool") == "e2-orders"]
+    if (len(worker_nodes) != 1 or worker_nodes[0].get("deleting_at")
+            or worker_nodes[0].get("annotations", {}).get("karpenter.sh/do-not-disrupt") != "true"
+            or not any(c.get("type") == "Ready" and c.get("status") == "True"
+                       for c in worker_nodes[0].get("conditions", []))):
+        raise ValueError("E2 cần đúng một node e2-orders Ready được bảo vệ khỏi consolidation")
     controllers = source.controllers()
     if set(controllers) != expected[controller_variant]:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
@@ -217,15 +226,15 @@ def preflight(source, variant):
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e2"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
                 or spec.get("minReplicaCount") != 0 or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval", 30) != 30
-                or spec.get("cooldownPeriod", 300) != 300
+                or spec.get("pollingInterval") != 5
+                or spec.get("cooldownPeriod") != 150
                 or hpa.get("spec", {}).get("minReplicas", 1) != 1
                 or hpa.get("spec", {}).get("maxReplicas") != 10
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E2 không đúng owner hoặc cấu hình min=0, max=10, queueLength=10")
+            raise ValueError("ScaledObject/HPA E2 không đúng owner hoặc cấu hình min=0, max=10, queueLength=10, polling=5s, cooldown=150s")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E2 chưa Ready")
@@ -261,7 +270,7 @@ def preflight(source, variant):
     values = up.get("data", {}).get("result", [])
     if len(values) < max(1, replicas) or any(float(item["value"][1]) != 1 for item in values):
         raise ValueError("Prometheus chưa sẵn sàng hoặc worker target chưa UP")
-    return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": source.nodes(),
+    return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": nodes,
             "queue": queue, "dlq": dlq, "controllers": controllers}
 
 
@@ -283,6 +292,7 @@ class Collector:
         self.exports = {}
         self.started = None
         self.before = None
+        self.image_ids = set()
 
     def error(self, source, exc):
         item = {"observed_at_utc": utc_now(), "source": source, "error": str(exc)[:1000]}
@@ -295,10 +305,13 @@ class Collector:
             original = self.before["worker"]
             if worker["uid"] != original["uid"] or worker["containers"] != original["containers"]:
                 self.warnings.add("worker_configuration_changed")
-            baseline_ids = {c.get("imageID") for p in original["pods"] for c in p["containers"]}
+            self.image_ids.update(c.get("imageID") for p in original["pods"] for c in p["containers"] if c.get("imageID"))
             for pod in worker["pods"]:
                 for container in pod["containers"]:
-                    if baseline_ids and container.get("imageID") and container["imageID"] not in baseline_ids:
+                    image_id = container.get("imageID")
+                    if image_id:
+                        self.image_ids.add(image_id)
+                    if len(self.image_ids) > 1:
                         self.warnings.add("worker_image_changed")
                     if container.get("restartCount", 0):
                         self.warnings.add("worker_restarted")

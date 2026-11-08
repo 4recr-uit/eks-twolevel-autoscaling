@@ -31,8 +31,10 @@ def configure():
 
 
 def fmt(value):
-    rounded = Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    return f"{rounded:.2f}"
+    value = Decimal(str(value))
+    places = 3 if 0 < abs(value) < 1 else 2
+    rounded = value.quantize(Decimal(1).scaleb(-places), rounding=ROUND_HALF_UP)
+    return f"{rounded:.{places}f}"
 
 
 def style_axis(ax):
@@ -44,10 +46,7 @@ def style_axis(ax):
 def summary_figure(profile, runs):
     configure()
     fig, axes = plt.subplots(1, 3, figsize=(15.8, 5.6))
-    fig.subplots_adjust(left=0.065, right=0.985, top=0.84, bottom=0.19, wspace=0.35)
-    legend = [Line2D([0], [0], color=INK, marker="s", linestyle="None", markersize=9, label="Mean"),
-              Line2D([0], [0], color=INK, marker="o", linestyle="None", markersize=6, label="Run")]
-    fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(.5, .99), ncol=2, frameon=False)
+    fig.subplots_adjust(left=0.065, right=0.985, top=0.88, bottom=0.16, wspace=0.35)
     specs = (
         ("P95 end-to-end latency", "Seconds", lambda r: r.report["latency_seconds_approx_all_statuses"]["p95"]),
         ("Peak queue depth", "Messages", lambda r: r.report["peak_visible_plus_inflight_approx"]),
@@ -57,7 +56,7 @@ def summary_figure(profile, runs):
         style_axis(ax)
         ax.set_title(title, loc="left", fontsize=13, fontweight="bold", pad=14)
         ax.set_ylabel(unit, fontsize=10)
-        max_value = max(accessor(r) for r in runs)
+        max_value = max(mean(accessor(r) for r in runs if r.variant == variant) for variant in VARIANTS)
         ax.set_ylim(0, max_value * 1.36 if max_value else 1)
         for x, variant in enumerate(VARIANTS):
             group = sorted((r for r in runs if r.variant == variant), key=lambda r: r.attempt)
@@ -67,12 +66,7 @@ def summary_figure(profile, runs):
             ax.bar(x, avg, width=0.57, color=COLORS[variant], alpha=0.88, zorder=2)
             ax.text(x, avg + max_value * .035, fmt(displayed_avg), ha="center", va="bottom",
                     fontsize=12, fontweight="bold", color=COLORS[variant], zorder=5)
-            for idx, run in enumerate(group):
-                offset = (idx - (len(group) - 1) / 2) * (.46 / max(1, len(group) - 1))
-                ax.scatter(x + offset, accessor(run), s=48, color=INK, edgecolors="white",
-                           linewidths=1.2, zorder=4)
-        ax.set_xticks(range(2), [f"Warm\n(n={sum(r.variant == 'warm' for r in runs)})",
-                                 f"Elastic\n(n={sum(r.variant == 'elastic' for r in runs)})"])
+        ax.set_xticks(range(2), ["Warm", "Elastic"])
         ax.set_xlim(-.65, 1.65)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     return fig
@@ -112,6 +106,45 @@ def conclusion_figure(groups):
         ax.set_xticks((0, 1), [f"Step\n(n={len(groups['step']) // 2})",
                                 f"Burst\n(n={len(groups['burst']) // 2})"])
         ax.set_xlim(-.65, 1.65)
+        ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
+    return fig
+
+
+def burst_comparison_figure(groups):
+    """Compare run means across the three minimum-worker configurations."""
+    configure()
+    fig, axes = plt.subplots(2, 2, figsize=(15, 8.5))
+    fig.subplots_adjust(left=.075, right=.985, top=.90, bottom=.09, hspace=.48, wspace=.26)
+    legend = [Line2D([0], [0], color=COLORS[v], marker="s", linestyle="None", markersize=10,
+                     label=LABELS[v]) for v in VARIANTS]
+    fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(.5, .99), ncol=2, frameon=False)
+    specs = (
+        ("P95 end-to-end latency", "Seconds", lambda r: r.report["latency_seconds_approx_all_statuses"]["p95"]),
+        ("Peak queue depth", "Messages", lambda r: r.report["peak_visible_plus_inflight_approx"]),
+        ("Ready pod-minutes", "Pod-minutes", lambda r: r.report["ready_pod_minutes_approx"]),
+        ("Node-minutes", "Node-minutes", lambda r: r.report["worker_node_minutes_approx"]),
+    )
+    for ax, (title, unit, accessor) in zip(axes.flat, specs):
+        style_axis(ax)
+        ax.set_title(title, loc="left", fontsize=13, fontweight="bold", pad=12)
+        ax.set_ylabel(unit, fontsize=10)
+        averages = {}
+        for config, runs in groups.items():
+            for variant in VARIANTS:
+                values = [Decimal(str(accessor(r))) for r in runs if r.variant == variant]
+                averages[config, variant] = sum(values) / len(values)
+        maximum = max(float(value) for value in averages.values())
+        ax.set_ylim(0, maximum * 1.28 if maximum else 1)
+        for x, config in enumerate((1, 2, 3)):
+            for index, variant in enumerate(VARIANTS):
+                value = averages[config, variant]
+                position = x + (-.19 if index == 0 else .19)
+                ax.bar(position, float(value), width=.34, color=COLORS[variant], alpha=.88, zorder=2)
+                ax.text(position, float(value) + maximum * .025, fmt(value), ha="center", va="bottom",
+                        fontsize=10, fontweight="bold", color=COLORS[variant])
+        ax.set_xticks(range(3), ["1", "3", "5"])
+        ax.set_xlabel("Minimum workers", fontsize=10)
+        ax.set_xlim(-.62, 2.62)
         ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     return fig
 
