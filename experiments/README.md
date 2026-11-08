@@ -9,9 +9,9 @@
 | **E1** | Warm Capacity vs Elastic Capacity (Node) | **Core** | So sánh Warm/Elastic và khảo sát số worker tối thiểu 1/3/5 với KEDA + Karpenter. | ✓ | ✓ | — |
 | **E2** | KEDA + Karpenter Two-Level Elasticity | **Core** | Đo đường từ spike, backlog và Pod Pending đến Karpenter provision node, Pod Ready và throughput phục hồi; phân tích độ trễ từng giai đoạn. | ✓ | ✓ | — |
 | **E3** | CPU-HPA vs KEDA trên Karpenter | **Core** | So sánh hai bộ điều khiển trên cùng workload, bắt đầu với một node worker được giữ sẵn và capacity trống tương đương. | ✓ | ✓ | — |
-| **E4** | KEDA scaling response + Scale-to-Zero (`0 → N → 0`) | **Core** | Đo vòng đời worker `0 → N → 0` trên node sẵn và first-job latency; mở rộng đo node worker về 0 nếu thực hiện. | ✓ | ✓ | — |
-| **E5** | Cold start vs Pod pre-warming (Cron) | **Advanced** | So sánh không giữ sẵn worker với giữ sẵn worker; đánh giá latency và tài nguyên idle. | — | ✓ | — |
-| **E6** | Chi phí On-Demand/Karpenter; Spot (nếu còn thời gian) | **Optional**: C1–C3 trọng tâm; Spot mở rộng | Ước tính chi phí compute của HPA và KEDA trên Karpenter, cùng các phương án warm/elastic từ dữ liệu E1–E4; khảo sát thêm Spot nếu còn thời gian. | — | ✓ | — |
+| **E4 (bỏ)** | KEDA scaling response + Scale-to-Zero (`0 → N → 0`) | **Core** | Đo vòng đời worker `0 → N → 0` trên node sẵn và first-job latency; mở rộng đo node worker về 0 nếu thực hiện. | ✓ | ✓ | — |
+| **E5 (bỏ)** | Cold start vs Pod pre-warming (Cron) | **Advanced** | So sánh không giữ sẵn worker với giữ sẵn worker; đánh giá latency và tài nguyên idle. | — | ✓ | — |
+| **E6 (bỏ)** | Elastic On-Demand vs Elastic Spot | **Optional** | So sánh chi phí worker EC2, hiệu năng và khả năng cấp phát của KEDA + Karpenter khi dùng On-Demand hoặc Spot. | — | ✓ | — |
 | **E7** | Queue Target Sensitivity | **Optional** | Thay đổi `queueLength` của KEDA (thấp/vừa/cao) trên một workload đại diện, đo ảnh hưởng đến backlog, latency và số Pod. | ✓ | — | — |
 | **E8** | Chaos Engineering | **Optional** | Làm gián đoạn worker và quan sát phục hồi, queue, duplicate và throughput. | — | ✓ | — |
 
@@ -21,7 +21,7 @@ Chú thích:
 - **Core**: nội dung chính; **Advanced**: thực hiện sau khi core ổn định; **Optional**: thực hiện khi còn thời gian.
 - Mỗi tổ hợp cấu hình và workload dự kiến có ít nhất 3 lượt hợp lệ; mỗi môn nên có ít nhất 4 kịch bản.
 
-Mỗi kịch bản có cấu hình, workload và công cụ cần thiết trong thư mục của chính nó; E6 tính chi phí offline từ dữ liệu và giá do người chạy cung cấp. Các workload được sao chép theo cùng định nghĩa E0; khi thay đổi một profile cần cập nhật phiên bản và đối chiếu các kịch bản liên quan. KEDA, Karpenter và thành phần hệ thống phải có nơi chạy độc lập với node worker. Ghi điều kiện đầu, xác nhận drain và giữ nguyên run ID kết quả cũ.
+README của từng kịch bản mô tả cấu hình và công cụ hiện có; E6 đã chuẩn bị cấu hình/thu thập Spot để chạy Step và tính chi phí offline, chưa pilot trên cluster. Các workload có thể khác phiên bản; khi thay đổi profile cần ghi phiên bản và đối chiếu các kịch bản liên quan. KEDA, Karpenter và thành phần hệ thống phải có nơi chạy độc lập với node worker. Ghi điều kiện đầu, xác nhận drain và giữ nguyên run ID kết quả cũ.
 
 README của từng E mô tả điều kiện, cách chạy, thu thập và khôi phục. E1 Config 1 đã chạy Warm/Elastic với Step/Burst; Config 2/3 đã chạy Warm/Elastic với Burst. E2 có thể phân tích lại các lượt E1 Elastic Burst Config 1 để khảo sát scale-out hai tầng, giữ nguyên run ID và điều kiện E1; đây không phải lượt E2 độc lập. Cấu hình mặc định E2 (min 0, consolidation 1 phút) khác E1 (min 1/3/5, consolidation Never), nên không coi dữ liệu tái sử dụng là bằng chứng cho scale-from-zero hoặc consolidation của E2, hay gộp các lượt khác điều kiện như cùng cấu hình. Xem [thiết kế và timeline E2](E2/README.md#thiết-kế-đo-và-timeline).
 
@@ -49,49 +49,19 @@ README của từng E mô tả điều kiện, cách chạy, thu thập và khô
 
 ---
 
-### E6 — Phân tích chi phí
+### E6 — Elastic On-Demand vs Elastic Spot
 
-| **Câu hỏi**   | Mỗi cấu hình tốn bao nhiêu để xử lý cùng một khối lượng công việc, và phần tiết kiệm đến từ đâu?                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Cách làm**  | **Không chạy thí nghiệm riêng.** Tính từ số liệu đo của E1, E2, E3, E4. Chi phí là mô hình ước tính từ metric, không đọc từ hóa đơn AWS. |
-
-|Config|Autoscaler|Node capacity|Lấy số liệu từ|
-|---|---|---|---|
-|C1|HPA + Karpenter|Node worker sẵn và mở rộng|E3|
-|C2|KEDA + Karpenter|Node worker sẵn và mở rộng|E3|
-|C3|KEDA + Karpenter|Warm / Elastic|E1 và E2|
-
-**Công thức**
-
-```text
-Cost_compute = Σ (Price_i × Runtime_i)
-C_1000       = (TotalCost / ProcessedTasks) × 1000
-Saving%      = (Cost_baseline − Cost_candidate) / Cost_baseline × 100
-```
-
-**Thành phần chi phí cần tách riêng**
-
-- Chi phí cố định, không đổi theo autoscaling: EKS control plane, NAT, seed nodes, hai RDS.
-- Chi phí compute co giãn: Node-hours theo từng instance type, Pod-minutes.
-- Idle cost (khi không có workload) tách khỏi cost trong workload window, để thể hiện đúng giá trị của scale-to-zero.
-
-|Mục|Nội dung|
+| Mục | Nội dung |
 |---|---|
-|**Đo gì**|Node-hours, instance type, capacity type, Pod-minutes, tasks processed, tổng chi phí compute ước tính, cost per 1,000 tasks, saving %|
-|**Dựa vào**|Node-minutes và Pod-minutes từ Prometheus (E1, E2, E3, E4, và idle từ E4); bảng giá AWS tại thời điểm chạy (ghi rõ region và ngày); cùng workload và cùng độ dài cửa sổ cho mọi cấu hình, cửa sổ phải bao gồm đoạn idle sau khi tải dừng|
-|**Lưu ý**|So sánh theo cost per 1,000 tasks, không so tổng tiền, vì số task xử lý của các cấu hình có thể khác nhau. Ghi rõ mọi giả định.|
-#### Chi phí với Spot (C4)
+| **Câu hỏi** | Khi giữ kiến trúc Elastic KEDA + Karpenter, dùng Spot thay On-Demand ảnh hưởng thế nào đến chi phí worker EC2, hiệu năng và khả năng cấp phát? |
+| **C1 — baseline** | Elastic + KEDA + Karpenter + EC2 On-Demand. |
+| **C2 — so sánh** | Elastic + KEDA + Karpenter + EC2 Spot. |
+| **Nguồn** | Các lượt Elastic Step E1 Config 1 làm baseline thăm dò sau khi kiểm tra validity. Bộ cấu hình và thu thập Spot E6 đã được chuẩn bị nhưng chưa pilot; Spot thực tế cần lượt đo tương ứng. |
+| **Thiết kế** | Cùng workload/version, worker, KEDA, điều kiện đầu, policy và cửa sổ; ghi rõ instance type/AZ thực tế. Không trộn E1 Burst v3 với E2 Burst v5 như cùng workload. |
+| **Đo gì** | Node-seconds, giá theo type/AZ/thời gian, compute cost, cost/1.000 job thành công, p95/p99, backlog, drain, thời gian Pending/provisioning và interruption quan sát được. |
+| **What-if** | Có thể áp giá Spot lên runtime On-Demand để ước tính, nhưng phải ghi rõ giả định và không coi là lượt chạy Spot hoặc bằng chứng về hiệu năng, interruption. |
 
-| **Câu hỏi**   | Dùng EC2 Spot cho Node co giãn thay đổi chi phí và độ ổn định thế nào so với On-Demand?                  |
-| ------------- | -------------------------------------------------------------------------------------------------------- |
-| **Cấu hình**  | C4: KEDA + Karpenter + Spot elastic, cùng workload với C3.                                               |
-| **Điều kiện** | **Chạy tách riêng khỏi E2**, để độ trễ provisioning của E2 không bị lẫn với biến động capacity của Spot. |
-
-|Mục|Nội dung|
-|---|---|
-|**Đo gì**|Node-hours và giá Spot theo thời điểm, cost per 1,000 tasks, số lần Spot interruption, Pending Pod duration, throughput dip khi bị thu hồi, duplicate message|
-|**Dựa vào**|E2 (cấu hình Karpenter), E6 (mô hình chi phí); NodePool khai báo nhiều instance type; interruption handling của Karpenter; Worker xử lý SIGTERM gọn và chịu được message xử lý trùng (visibility timeout của SQS)|
-|**Lưu ý**|Mức giảm giá của Spot phụ thuộc region, instance type và thời điểm. Dùng giá thực tế tại lúc chạy, không dùng con số cố định. Có thể thay bằng ước tính what-if từ Spot price history nếu không chạy thật.|
+`Cost_compute = Σ(node_seconds / 3600 × hourly_price)`; `cost_per_1000 = compute_cost / processed_success × 1000`. Giá, runtime, success và chất lượng dữ liệu cần nguồn rõ ràng; số request được API chấp nhận không chứng minh job đã hoàn thành. Chi phí idle là một phần compute cost, không cộng hai lần. Chi phí EKS, node hệ thống, NAT, RDS, đĩa, network và thời gian ngoài cửa sổ cần nêu riêng; node Kubernetes chỉ là proxy cho EC2 runtime. Xem [thiết kế E6](E6/README.md).
 
 ---
 
