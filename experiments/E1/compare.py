@@ -20,8 +20,15 @@ def compare(reports):
     if not reports:
         raise ValueError("Cần ít nhất một report")
     reference = reports[0]
+    minimums = {1: 1, 2: 3, 3: 5}
+    ref_config = reference.get("config", 1)
+    if type(ref_config) is not int or ref_config not in minimums:
+        raise ValueError("Config E1 không hợp lệ")
     keys = ("profile", "workload", "configuration", "resource_window_before_workload_seconds", "resource_window_after_workload_seconds")
     for item in reports:
+        config = item.get("config", 1)
+        if config != ref_config or item.get("min_workers", minimums.get(config)) != minimums[ref_config]:
+            raise ValueError("Không gộp các report E1 thuộc config hoặc min worker khác nhau")
         if item.get("variant") not in ("warm", "elastic"):
             raise ValueError("Variant trong report không hợp lệ")
         if any(item.get(key) != reference.get(key) for key in keys):
@@ -29,10 +36,10 @@ def compare(reports):
     ids = [item["run_id"] for item in reports]
     if len(ids) != len(set(ids)):
         raise ValueError("Run ID bị lặp")
-    lines = [f"# So sánh E1 — {reference['profile']}", "",
+    lines = [f"# So sánh E1 — config {ref_config}, {reference['profile']}", "",
              "Trung vị [min–max] (số lượt có dữ liệu / số lượt); người chạy cần kiểm tra tính hợp lệ.", "",
-             "| Nhánh | Lượt | Accepted | Success đến drain | Throughput trong tải (task/s) | p95 E2E (s) | Peak backlog | Drain (s) | Ready Pod-minutes | Worker Node-minutes |",
-             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+             "| Nhánh | Lượt | Accepted | Success đến drain | Throughput trong tải (task/s) | p95 E2E (s) | p95 queue wait (s) | p95 xử lý (s) | Peak backlog | Drain (s) | Ready Pod-minutes | Worker Node-minutes |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for variant in ("warm", "elastic"):
         group = [x for x in reports if x["variant"] == variant]
         if not group:
@@ -42,6 +49,8 @@ def compare(reports):
                 cell([(x.get("completed_by_status_through_drain_approx") or {}).get("success") for x in group], n),
                 cell([x.get("success_per_second_during_workload_approx") for x in group], n),
                 cell([(x.get("latency_seconds_approx_all_statuses") or {}).get("p95") for x in group], n),
+                cell([(x.get("queue_wait_seconds_approx_all_statuses") or {}).get("p95") for x in group], n),
+                cell([(x.get("task_duration_seconds_approx_all_statuses") or {}).get("p95") for x in group], n),
                 cell([x.get("peak_visible_plus_inflight_approx") for x in group], n),
                 cell([x.get("drain_confirmation_seconds_approx") for x in group], n),
                 cell([x.get("ready_pod_minutes_approx") for x in group], n),

@@ -10,7 +10,7 @@ class ExperimentWorkdirTests(unittest.TestCase):
     def test_scenarios_have_local_tools_and_configuration(self):
         expected = {
             "E0": ("run.py", "run.sh", "collect.py", "report.py", "workload.js", "fixed-values.yaml"),
-            "E1": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda.yaml", "karpenter-values.yaml"),
+            "E1": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "keda-config1.yaml", "keda-config2.yaml", "keda-config3.yaml", "karpenter-values.yaml"),
             "E2": ("run.py", "run.sh", "collect.py", "report.py", "timeline.py", "keda.yaml", "karpenter-values.yaml"),
             "E3": ("run.py", "run.sh", "collect.py", "report.py", "compare.py", "hpa.yaml", "keda.yaml"),
             "E4": ("run.py", "run.sh", "collect.py", "report.py", "first_job.py", "keda.yaml"),
@@ -28,7 +28,8 @@ class ExperimentWorkdirTests(unittest.TestCase):
     def test_profile_copies_match_e0_model(self):
         for name in ("stead.js", "step.js", "burst.js", "workload-common.js"):
             reference = (EXPERIMENTS / "E0" / name).read_text(encoding="utf-8")
-            for scenario in ("E1", "E2", "E3", "E4", "E5", "E7", "E8"):
+            # E2 has its own burst workload for cold-start measurement.
+            for scenario in ("E1", "E3", "E4", "E5", "E7", "E8"):
                 with self.subTest(scenario=scenario, name=name):
                     content = (EXPERIMENTS / scenario / name).read_text(encoding="utf-8")
                     if name == "workload-common.js":
@@ -36,6 +37,12 @@ class ExperimentWorkdirTests(unittest.TestCase):
                         content = content.replace(scenario.lower() + "_failed_requests", "e1_failed_requests")
                         content = content.replace("test-" + scenario.lower(), "test-e1")
                     self.assertEqual(reference, content)
+
+    def test_e2_only_keeps_burst_workload(self):
+        e2 = EXPERIMENTS / "E2"
+        self.assertTrue((e2 / "burst.js").is_file())
+        for name in ("stead.js", "step.js", "snapshot.py"):
+            self.assertFalse((e2 / name).exists())
 
     def test_scenario_code_does_not_import_removed_common_directories(self):
         for scenario in ("E0", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8"):
