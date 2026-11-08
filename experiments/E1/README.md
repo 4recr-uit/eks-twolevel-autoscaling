@@ -5,8 +5,8 @@ E1 khảo sát hai yếu tố: **node capacity** có sẵn và **số worker t�
 | Cấu hình | KEDA min | KEDA max | Kết quả hiện có |
 |---|---:|---:|---|
 | Config 1 — `keda-config1.yaml` | 1 | 10 | Đã chạy Warm/Elastic với Step/Burst; xem bên dưới |
-| Config 2 — `keda-config2.yaml` | 3 | 10 | Chưa chạy |
-| Config 3 — `keda-config3.yaml` | 5 | 10 | Chưa chạy |
+| Config 2 — `keda-config2.yaml` | 3 | 10 | Đã chạy Warm/Elastic với Burst |
+| Config 3 — `keda-config3.yaml` | 5 | 10 | Đã chạy Warm/Elastic với Burst |
 
 Mỗi config có hai nhánh: **Warm** chuẩn bị 4 node E1 Ready; **Elastic** không giữ node E1 rảnh không có worker. Bắt đầu khi tất cả worker tối thiểu đã Ready. Elastic Config 3 có thể cần từ 2 node; xác định từ requests, allocatable và Pod thực tế, không giả định 5 worker sẽ vừa 1 node. Ghi số node và phân bố worker vì có thể còn capacity trống trên các node đang chạy worker. Giữ workload, worker, queue và thông số autoscaler khác giống nhau. Lượt min=1 cũ giữ nguyên tên và được xem là Config 1.
 
@@ -197,7 +197,7 @@ Biểu đồ: [Step tổng hợp](figures/config-1/step_summary.png) · [Step th
 
 Đỉnh queue là tổng visible và in-flight lớn nhất quan sát được từ các mẫu SQS. p95 là ước lượng từ histogram E2E của worker. Node-phút tính theo node Kubernetes thuộc NodePool E1, trong cửa sổ từ 60 giây trước đến 60 giây sau tải; **không phải chi phí EC2** và chưa bao gồm toàn bộ thời gian chuẩn bị hoặc giữ node ngoài cửa sổ.
 
-Ở Burst, cả hai lượt Elastic có Pod không xếp lịch được do thiếu CPU request và Karpenter tạo thêm ba node. Theo mẫu collector, Warm đạt 10 worker Ready sớm hơn khoảng **39 giây ở r01** và **34 giây ở r02**. Warm vẫn có backlog vì việc scale và khởi động Pod cần thời gian. Ở Step, Elastic r01 không cần node mới, còn r02 tạo thêm một node; hai lượt Elastic có p95 và đỉnh queue quan sát thấp hơn Warm.
+Ở Burst, cả hai lượt Elastic có Pod không xếp lịch được do thiếu CPU request và Karpenter tạo thêm ba node. Theo mẫu metric, Warm ghi nhận 10 worker Ready sau khi Burst bắt đầu khoảng **62–66 giây**, Elastic khoảng **108–113 giây**. Đây là thời điểm đầu tiên quan sát được, không phải timestamp chính xác lúc Pod Ready. Warm vẫn có backlog vì việc scale và khởi động Pod cần thời gian. Ở Step, Elastic r01 không cần node mới, còn r02 tạo thêm một node; hai lượt Elastic có p95 và đỉnh queue quan sát thấp hơn Warm.
 
 Cả tám lượt có 100% request được API chấp nhận theo check k6, nhưng điều này không xác nhận mọi job đã hoàn thành. Counter success chưa khớp số job được nhận và có thể thiếu dữ liệu từ Pod mới hoặc sống ngắn; chưa đối soát theo job ID. SQS và histogram là ước lượng, CPU chưa đủ dữ liệu đồng đều để so sánh chắc chắn. Các report vẫn ghi `validity: not_assessed`; cần xem [kết quả gốc](../results/E1/) và hoàn thiện `notes.md` khi đánh giá chính thức.
 
@@ -212,45 +212,53 @@ Bảng sau lấy **trung bình số học của hai lượt** cho từng nhánh 
 
 ### Config 2 — min 3 worker
 
-**Trạng thái: chưa chạy.** Bắt đầu với 3 worker Ready; Warm giữ 4 node E1, Elastic chỉ giữ các node cần cho 3 worker. Các ô `—` là dữ liệu chưa có, không phải giá trị 0.
+Đã chạy hai lượt Burst cho mỗi nhánh. Warm bắt đầu với **4 node E1**, Elastic với **2 node E1**; cả hai bắt đầu với **3 worker Ready**. Chưa chạy Step cho config này.
+
+Biểu đồ: [Burst tổng hợp](figures/config-2/burst_summary.png) · [Burst theo thời gian](figures/config-2/burst_timeline.png).
 
 | Profile | Nhánh | Lượt | Node E1 đầu → cao nhất | Đỉnh queue ≈ | p95 E2E ≈ (s) | Node-phút ≈ |
 |---|---|---|---:|---:|---:|---:|
-| Burst | Warm | r01 | — | — | — | — |
-| Burst | Warm | r02 | — | — | — | — |
-| Burst | Elastic | r01 | — | — | — | — |
-| Burst | Elastic | r02 | — | — | — | — |
-| Step | Warm / Elastic | Nếu chạy thêm | — | — | — | — |
+| Burst | Warm | r01 | 4 → 4 | 374 | 11,95 | 18,02 |
+| Burst | Warm | r02 | 4 → 4 | 362 | 14,20 | 18,00 |
+| Burst | Elastic | r01 | 2 → 4 | 378 | 14,31 | 11,33 |
+| Burst | Elastic | r02 | 2 → 3 | 182 | 6,61 | 10,47 |
 
-| Profile | p95 Warm / Elastic ≈ (s) | Đỉnh queue Warm / Elastic ≈ | Node-phút Warm / Elastic ≈ | Nhận xét |
-|---|---:|---:|---:|---|
-| Burst | — | — | — | Chưa có dữ liệu |
+So với min 1, p95 và đỉnh queue trung bình giảm ở cả hai nhánh, nhưng vẫn còn backlog đáng kể. Hai lượt Elastic có Pod Pending và thay đổi tập node; Warm không ghi nhận Pending. p95 Elastic dao động từ **6,61 đến 14,31 giây**, nên hai lượt chưa đủ để kết luận Elastic nhanh hơn Warm.
 
 ### Config 3 — min 5 worker
 
-**Trạng thái: chưa chạy.** Bắt đầu với 5 worker Ready; Warm giữ 4 node E1, Elastic chỉ giữ các node cần cho 5 worker. Các ô `—` là dữ liệu chưa có, không phải giá trị 0.
+Đã chạy hai lượt Burst cho mỗi nhánh. Warm bắt đầu với **4 node E1**, Elastic với **2 node E1**; cả hai bắt đầu với **5 worker Ready**. Chưa chạy Step cho config này.
+
+Biểu đồ: [Burst tổng hợp](figures/config-3/burst_summary.png) · [Burst theo thời gian](figures/config-3/burst_timeline.png).
 
 | Profile | Nhánh | Lượt | Node E1 đầu → cao nhất | Đỉnh queue ≈ | p95 E2E ≈ (s) | Node-phút ≈ |
 |---|---|---|---:|---:|---:|---:|
-| Burst | Warm | r01 | — | — | — | — |
-| Burst | Warm | r02 | — | — | — | — |
-| Burst | Elastic | r01 | — | — | — | — |
-| Burst | Elastic | r02 | — | — | — | — |
-| Step | Warm / Elastic | Nếu chạy thêm | — | — | — | — |
+| Burst | Warm | r01 | 4 → 4 | 6 | 0,243 | 18,00 |
+| Burst | Warm | r02 | 4 → 4 | 10 | 0,245 | 18,00 |
+| Burst | Elastic | r01 | 2 → 2 | 7 | 0,244 | 9,00 |
+| Burst | Elastic | r02 | 2 → 2 | 6 | 0,244 | 9,00 |
 
-| Profile | p95 Warm / Elastic ≈ (s) | Đỉnh queue Warm / Elastic ≈ | Node-phút Warm / Elastic ≈ | Nhận xét |
-|---|---:|---:|---:|---|
-| Burst | — | — | — | Chưa có dữ liệu |
+Cả bốn lượt có p95 E2E gần **0,244 giây**, peak SQS từ **6 đến 10 message**, không ghi nhận Pending hoặc scale-out trong cửa sổ báo cáo. p95 thời gian xử lý task ước lượng khoảng **0,242–0,243 giây**; điều này phù hợp với việc hàng đợi không tích tụ đáng kể. Các percentile được nội suy từ histogram, không thể xem là số đo chính xác đến từng mili giây.
 
 ### So sánh các config với Burst
 
-Giá trị Config 1 là trung bình hai lượt; các ô còn lại chờ kết quả. Queue wait Config 1 chưa được collector lưu. p95 trung bình là trung bình p95 từng lượt, không phải p95 gộp mọi job.
+Các giá trị là **trung bình số học của hai lượt**. p95 trung bình là trung bình p95 từng lượt, không phải p95 gộp mọi job. Ready Pod-phút tính từ đầu tải đến 60 giây sau tải; Node-phút còn gồm 60 giây trước tải.
 
-| Config | Nhánh | p95 E2E ≈ (s) | p95 queue wait ≈ (s) | Đỉnh queue ≈ | Ready Pod-phút ≈ | Node-phút ≈ |
-|---|---|---:|---:|---:|---:|---:|
-| 1 — min 1 | Warm | 22,77 | — | 585,5 | 17,91 | 18,01 |
-| 1 — min 1 | Elastic | 41,45 | — | 797,5 | 13,69 | 8,33 |
-| 2 — min 3 | Warm | — | — | — | — | — |
-| 2 — min 3 | Elastic | — | — | — | — | — |
-| 3 — min 5 | Warm | — | — | — | — | — |
-| 3 — min 5 | Elastic | — | — | — | — | — |
+Biểu đồ: [So sánh trung bình ba config](figures/comparison/burst_comparison_average.png).
+
+| Config | Nhánh | p95 E2E ≈ (s) | Đỉnh queue ≈ | Ready Pod-phút ≈ | Node-phút ≈ |
+|---|---|---:|---:|---:|---:|
+| 1 — min 1 | Warm | 22,77 | 585,5 | 17,91 | 18,01 |
+| 1 — min 1 | Elastic | 41,45 | 797,5 | 13,69 | 8,33 |
+| 2 — min 3 | Warm | 13,08 | 368 | 20,87 | 18,01 |
+| 2 — min 3 | Elastic | 10,46 | 280 | 18,35 | 10,90 |
+| 3 — min 5 | Warm | 0,244 | 8 | 17,50 | 18,00 |
+| 3 — min 5 | Elastic | 0,244 | 6,5 | 17,50 | 9,00 |
+
+#### Giải thích độ trễ và kết luận
+
+Với `workUnits=100`, riêng vòng xử lý CPU của mỗi job chạy khoảng 100 ms theo thời gian thực. Mỗi worker xử lý một message tại một thời điểm, nên một worker có giới hạn lý thuyết khoảng **10 job/s** chỉ xét bước này, chưa tính DB, SQS và các bước khác. Khi tải tăng lên **40 job/s**, một worker ban đầu không đáp ứng kịp; job tích tụ trong queue trong lúc hệ thống phát hiện tải, tăng replica và chờ Pod Ready. `pollingInterval` của KEDA là 30 giây, nhưng dữ liệu không đủ để tách chính xác thời gian chờ của từng bước.
+
+Warm giữ sẵn node nhưng Config 1 chỉ có một worker Ready, vì vậy vẫn có backlog và p95 cao. Elastic còn ghi nhận Pending và tạo node mới, phù hợp với việc chờ capacity góp phần tăng độ trễ; chưa thể định lượng riêng phần này. Config 3 giữ sẵn 5 worker và trong bài Burst đã thử không cần scale-out: p95 và peak SQS đều thấp ở cả hai nhánh.
+
+Với **Burst 40 job/s trong 30 giây**, tăng min worker từ 1 lên 5 giúp giảm mạnh p95 và peak SQS. Ở min 5, Elastic có p95 tương đương Warm trong khi sử dụng khoảng **9 so với 18 node-phút** trong cửa sổ đo. Kết quả chưa tính chi phí giữ worker/node ngoài cửa sổ và không chứng minh 5 worker là mức tối ưu cho tải khác.

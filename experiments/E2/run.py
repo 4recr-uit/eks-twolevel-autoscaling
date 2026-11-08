@@ -85,7 +85,7 @@ def init_run(args, *, repo_root=REPO_ROOT):
 
     metadata = {
         "schema_version": 1,
-        "design_revision": "warm-elastic-keda-karpenter-v1",
+        "design_revision": "pod-coldstart-protected-node-v1",
         "run_id": run_id,
         "scenario": args.scenario,
         "variant": args.variant,
@@ -169,7 +169,7 @@ def parser():
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
     init.add_argument("--scenario", default="E2", choices=["E2"])
     init.add_argument("--variant", required=True, choices=['elastic'])
-    init.add_argument("--profile", required=True, choices=["steady", "step", "burst"])
+    init.add_argument("--profile", required=True, choices=["burst"])
     init.add_argument("--attempt", required=True, type=attempt)
     init.add_argument("--context", default="twolevel-dev", type=nonempty)
     init.add_argument("--namespace", default="retailstore", type=kube_name)
