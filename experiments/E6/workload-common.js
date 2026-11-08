@@ -19,14 +19,17 @@ if (!['none', 'light', 'full'].includes(dbMode) ||
     workUnits < 1 || workUnits > 10000 || vus < 1) {
   throw new Error('Kiểm tra BATCH_SIZE (1–10), WORK_UNITS (1–10000), VUS và DB_MODE');
 }
+if (batchSize !== 1 || workUnits !== 100 || vus !== 50 || dbMode !== 'light') {
+  throw new Error('E6 cần cấu hình baseline E1: BATCH_SIZE=1, WORK_UNITS=100, VUS=50, DB_MODE=light');
+}
 
 export function optionsFor(startRate, stages) {
   return { scenarios: { jobs: { executor: 'ramping-arrival-rate', startRate,
     timeUnit: '1s', preAllocatedVUs: vus, maxVUs: vus, stages } } };
 }
 
-const acceptedJobs = new Counter('e4_accepted_jobs');
-const failedRequests = new Rate('e4_failed_requests');
+const acceptedJobs = new Counter('e1_accepted_jobs');
+const failedRequests = new Rate('e1_failed_requests');
 const workloadStartedAt = new Gauge('workload_started_at_unix_ms');
 const workloadFinishedAt = new Gauge('workload_finished_at_unix_ms');
 const config = {
@@ -53,7 +56,7 @@ export function teardown() {
 }
 
 export function sendJob() {
-  const response = http.post(`${baseUrl}/jobs`, JSON.stringify({ workUnits, dbMode, batchSize, customerId: 'test-e4' }),
+  const response = http.post(`${baseUrl}/jobs`, JSON.stringify({ workUnits, dbMode, batchSize, customerId: 'test-e1' }),
     { headers: { 'Content-Type': 'application/json' } });
   let body;
   try { body = response.json(); } catch (_) { body = {}; }

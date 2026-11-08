@@ -72,11 +72,14 @@ def git_snapshot(repo_root):
 
 
 def init_run(args, *, repo_root=REPO_ROOT):
-    variants = {"E4": ("pod-zero", "node-zero")}
+    variants = {"E6": ("elastic",)}
     allowed = variants.get(args.scenario)
     if allowed and args.variant not in allowed:
         raise ValueError(f"{args.scenario} chỉ hỗ trợ variant: {', '.join(allowed)}")
-    run_id = f"{args.scenario}-{args.variant}-{args.profile}-r{args.attempt:02d}"
+    config = getattr(args, "config", 1)
+    if type(config) is not int or config != 1 or args.profile != "step":
+        raise ValueError("E6 chỉ hỗ trợ Config 1 và Step")
+    run_id = f"E6-{args.variant}-{args.profile}-r{args.attempt:02d}"
     scenario_dir = args.results_dir / args.scenario
     run_dir = scenario_dir / run_id
     scenario_dir.mkdir(parents=True, exist_ok=True)
@@ -87,11 +90,13 @@ def init_run(args, *, repo_root=REPO_ROOT):
 
     metadata = {
         "schema_version": 1,
-        "design_revision": "zero-prewarm-v1",
+        "design_revision": "spot-step-v1",
         "run_id": run_id,
         "scenario": args.scenario,
         "variant": args.variant,
         "profile": args.profile,
+        "config": config,
+        "min_workers": 1,
         "attempt": args.attempt,
         "prepared_at_utc": utc_now(),
         "started_at_utc": None,
@@ -169,10 +174,12 @@ def parser():
     result = argparse.ArgumentParser(description=__doc__)
     sub = result.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
-    init.add_argument("--scenario", default="E4", choices=["E4"])
-    init.add_argument("--variant", required=True, choices=['pod-zero', 'node-zero'])
-    init.add_argument("--profile", required=True, choices=["idle", "steady", "step", "burst"])
+    init.add_argument("--scenario", default="E6", choices=["E6"])
+    init.add_argument("--variant", required=True, choices=["elastic"])
+    init.add_argument("--profile", required=True, choices=["step"])
     init.add_argument("--attempt", required=True, type=attempt)
+    init.add_argument("--config", type=int, choices=(1,), default=1,
+                      help="baseline E1 Config 1, min 1 worker")
     init.add_argument("--context", default="twolevel-dev", type=nonempty)
     init.add_argument("--namespace", default="retailstore", type=kube_name)
     init.add_argument("--deployment", default="orders-worker", type=kube_name)
