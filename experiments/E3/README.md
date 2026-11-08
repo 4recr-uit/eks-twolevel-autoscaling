@@ -1,5 +1,9 @@
 # E3 — CPU-HPA vs KEDA trên Karpenter
 
+**Cập nhật 08/11/2026:** đã bổ sung tám lượt Step/Burst r03–r04; mỗi nhánh hiện có
+bốn lượt cho Step và Burst, hai lượt cho Steady. Xem [báo cáo mở rộng và biểu đồ](REPEATS-REPORT.md)
+và [trạng thái các lượt mới](REPEATS-STATUS.md). Báo cáo 12 lượt ngày 07/11 bên dưới được giữ riêng.
+
 Hướng dẫn thao tác sau E0/E1, thu số liệu và reset giữa các lượt: [RUNBOOK.md](RUNBOOK.md).
 
 Nếu upgrade làm API/worker thiếu cấu hình DB hoặc TLS, xem [RECOVERY.md](RECOVERY.md)

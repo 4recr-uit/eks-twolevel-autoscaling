@@ -1,5 +1,8 @@
 # Lịch chạy E3 — đã hoàn thành 12/12 lượt
 
+Lịch dưới đây thuộc đợt 07/11. Ngày 08/11 đã hoàn thành thêm tám lượt Step/Burst r03–r04,
+nâng tổng E3 lên 20 lượt; xem [trạng thái bổ sung](REPEATS-STATUS.md) và [báo cáo mở rộng](REPEATS-REPORT.md).
+
 Phạm vi đã chọn: hai lượt mỗi nhánh HPA/KEDA cho từng profile, theo thứ tự Step → Burst → Steady. Bốn lượt mỗi profile, tổng 12 lượt; không chạy r03 trong đợt này.
 
 | Thứ tự | Run ID | Trạng thái |
