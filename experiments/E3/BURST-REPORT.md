@@ -1,5 +1,8 @@
 # E3 — So sánh HPA và KEDA, Burst hai lượt mỗi nhánh
 
+Đây là báo cáo hai lượt/nhánh ngày 07/11. Đã bổ sung r03–r04 ngày 08/11;
+xem [báo cáo bốn lượt mỗi nhánh](REPEATS-REPORT.md), gồm đánh dấu trường hợp có restart và kiểm tra độ nhạy.
+
 Đã hoàn thành bốn lượt Burst theo kế hoạch ngày 2026-11-07. Mỗi lượt bắt đầu một
 worker và một node E3 Ready; cùng node gốc, image và cấu hình ứng dụng. Burst v3:
 5 request/s trong 60 giây → 40 trong 30 giây → 5 trong 60 giây; batch 1,

@@ -1,5 +1,8 @@
 # E3 — So sánh CPU-HPA và KEDA, workload Step
 
+Đây là báo cáo hai lượt/nhánh ngày 07/11. Đã bổ sung r03–r04 ngày 08/11;
+xem [báo cáo bốn lượt mỗi nhánh](REPEATS-REPORT.md) để đọc toàn bộ kết quả mới và cũ.
+
 ## Phạm vi đã hoàn thành
 
 Đã thu và đánh giá hai lượt HPA và hai lượt KEDA vào ngày 2026-11-07, đúng phạm vi
