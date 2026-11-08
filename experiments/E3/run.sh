@@ -20,7 +20,7 @@ case "$command" in
     python -c 'import json, pathlib, sys
 p = pathlib.Path(sys.argv[1]); metadata = json.loads((p / "metadata.json").read_text(encoding="utf-8-sig"))
 collection = json.loads((p / "collection.json").read_text(encoding="utf-8-sig"))
-if metadata.get("scenario") != "E3" or metadata.get("profile") != sys.argv[2] or metadata.get("variant") not in ('hpa', 'keda') or collection.get("status") != "collecting":
+if metadata.get("scenario") != "E3" or metadata.get("profile") != sys.argv[2] or metadata.get("variant") not in ("hpa", "keda") or collection.get("status") != "collecting":
     sys.exit("Profile hoặc collector không khớp; không phát tải.")' "$dir" "$1"
     exec k6 run --summary-export "$dir/raw/k6-summary.json" "./$file" ;;
   *) echo "Dùng: bash run.sh {init|inspect|collect|load|report|compare} ..."; echo "Xem README.md để chuẩn bị, apply và khôi phục." ;;

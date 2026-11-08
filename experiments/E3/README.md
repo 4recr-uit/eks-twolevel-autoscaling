@@ -1,5 +1,23 @@
 # E3 — CPU-HPA vs KEDA trên Karpenter
 
+**Cập nhật 08/11/2026:** đã bổ sung tám lượt Step/Burst r03–r04; mỗi nhánh hiện có
+bốn lượt cho Step và Burst, hai lượt cho Steady. Xem [báo cáo mở rộng và biểu đồ](REPEATS-REPORT.md)
+và [trạng thái các lượt mới](REPEATS-STATUS.md). Báo cáo 12 lượt ngày 07/11 bên dưới được giữ riêng.
+
+Hướng dẫn thao tác sau E0/E1, thu số liệu và reset giữa các lượt: [RUNBOOK.md](RUNBOOK.md).
+
+Nếu upgrade làm API/worker thiếu cấu hình DB hoặc TLS, xem [RECOVERY.md](RECOVERY.md)
+và kiểm tra chart local có đủ tính năng như chart đã triển khai trước đó.
+
+Các lượt đã đánh giá được tóm tắt trong [RESULTS.md](RESULTS.md).
+
+Đã hoàn thành **12/12 lượt** ngày 2026-11-07. Kết quả và biểu đồ được lưu trong [FINAL-REPORT.md](FINAL-REPORT.md).
+Đã khôi phục E1 và thu hồi EC2 E3; xem [CLEANUP.md](CLEANUP.md).
+Tài liệu thao tác bên dưới dành cho một đợt chạy mới; không chạy lại lên kết quả đã có.
+
+Đợt chạy hiện tại chọn **hai lượt/nhánh/profile**, theo thứ tự Step → Burst → Steady;
+xem trạng thái và thứ tự các lượt trong [RUNS.md](RUNS.md).
+
 E3 so sánh hai bộ điều khiển worker trên cùng workload. Mỗi nhánh bắt đầu với **một node worker Ready được giữ sẵn** và một worker Ready; capacity còn trống, image, requests/limits, concurrency, queue, `min/max`, node type và workload phải tương đương. Karpenter vẫn được mở rộng node khi cần. Chỉ một controller độc lập quản lý worker mỗi lượt: HPA do KEDA tạo thuộc nhánh KEDA.
 
 Mọi lệnh dưới đây chạy từ `experiments/E3` trong **mỗi** terminal Git Bash. E3 có file riêng, không cần chạy script từ thư mục E khác hoặc thư mục dùng chung; chart hạ tầng và ứng dụng dùng từ project.
@@ -13,7 +31,7 @@ Mọi lệnh dưới đây chạy từ `experiments/E3` trong **mỗi** terminal
 | `run.py`, `run.sh`, `collect.py`, `snapshot.py` | Hồ sơ, lệnh tắt và thu SQS, Prometheus, Pod, NodeClaim, node và event |
 | `report.py`, `compare.py` | Báo cáo từng lượt và so sánh HPA/KEDA cùng profile/cửa sổ |
 
-Các giá trị là **cấu hình đề xuất, chưa xác nhận trên cluster**. CPU request 500m khác 128m của E0; HPA target 60% được tính theo request này, cần pilot throughput và ghi điều kiện trong báo cáo. Một node Ready không tự chứng minh capacity trống tương đương: kiểm tra CPU, memory, Pod/IP trống và image cache từng nhánh. Pod Pending và node mới được ghi nhận; chênh lệch kết quả có thể bao gồm ảnh hưởng provisioning. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet và chi phí; `Never` có thể giữ node sau khi tải đã dừng.
+Các cấu hình này đã được kiểm tra trên cluster trong đợt ngày 2026-11-07; điều kiện và giới hạn được ghi trong báo cáo. CPU request 500m khác 128m của E0; HPA target 60% được tính theo request này. Một node Ready không tự chứng minh capacity trống tương đương: kiểm tra CPU, memory, Pod/IP trống và image cache từng nhánh. Pod Pending và node mới được ghi nhận; chênh lệch kết quả có thể bao gồm ảnh hưởng provisioning. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet và chi phí; `Never` có thể giữ node sau khi tải đã dừng.
 
 ## 1. Kiểm tra và lưu baseline
 
@@ -61,10 +79,13 @@ kubectl --context twolevel-dev -n retailstore delete deployment e3-warm-capacity
 kubectl --context twolevel-dev -n retailstore get pods -l app=e3-warm-capacity
 ```
 
-Triển khai worker giống nhau cho hai nhánh:
+Triển khai worker giống nhau cho hai nhánh. Đợt này dùng chart trích từ Helm revision 21
+vì chart backend local thiếu Secret DB/TLS/ServiceAccount; xem [RECOVERY.md](RECOVERY.md).
+Kiểm tra artifact chart và baseline đã chọn trước khi chạy:
 
 ```bash
-helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart -n retailstore --kube-context twolevel-dev \
+test -s ../../.generated/e3/orders-chart-revision21/Chart.yaml
+helm upgrade orders ../../.generated/e3/orders-chart-revision21 -n retailstore --kube-context twolevel-dev \
   -f ../../.generated/e3/orders-original-values.yaml -f ./autoscaled-values.yaml --server-side=false --wait --timeout 900s
 ```
 
@@ -138,9 +159,15 @@ kubectl --context twolevel-dev -n retailstore delete triggerauthentication e3-or
 
 Khôi phục baseline sau khi không còn controller E3 quản lý worker:
 
+Đây là lệnh tổng quát cho baseline không còn scaler trước E3. Riêng đợt ngày
+2026-11-07 dùng bản sao E1 trong `.generated/e3/pre-e3-20261107T083008Z/` và phải
+khôi phục cả ScaledObject/auth E1 (min 3/max 10); trạng thái thực tế được ghi trong
+[CLEANUP.md](CLEANUP.md). Không thay bản sao đó bằng cấu hình E3 đang chạy.
+
 ```bash
 test -s ../../.generated/e3/orders-original-values.yaml && test -s ../../.generated/e3/orders-original-replicas.txt
-helm upgrade orders ../../../retailstore-backend-microservices/src/orders/chart -n retailstore --kube-context twolevel-dev \
+test -s ../../.generated/e3/orders-chart-revision21/Chart.yaml
+helm upgrade orders ../../.generated/e3/orders-chart-revision21 -n retailstore --kube-context twolevel-dev \
   -f ../../.generated/e3/orders-original-values.yaml --server-side=false --wait --timeout 900s
 kubectl --context twolevel-dev -n retailstore scale deployment/orders-worker --replicas="$(cat ../../.generated/e3/orders-original-replicas.txt)"
 kubectl --context twolevel-dev -n retailstore rollout status deployment/orders-worker --timeout=900s
