@@ -117,6 +117,16 @@ q-low có p95 thấp nhất trong ba lượt (0,572 giây); q-high dùng ít Pod
 
 Bằng chứng: [q-low](../results/E7/E7-q-low-step-r01/notes.md), [q-medium](../results/E7/E7-q-medium-step-r01/notes.md), [q-high](../results/E7/E7-q-high-step-r01/notes.md); mỗi thư mục chứa `report.json`, `collection-summary.md`, k6 summary, mẫu worker/topology/SQS và đối chiếu CloudWatch. `collection.json` và collection summary giữ trạng thái đánh giá tại lúc thu; xác nhận sau thu nằm trong metadata, report và notes.
 
+**Biểu đồ:** [timeline queue và replica](figures/queue-worker-timeline.png) ([SVG](figures/queue-worker-timeline.svg)) và [so sánh p95, Pod-minutes, throughput](figures/latency-pod-minutes-throughput.png) ([SVG](figures/latency-pod-minutes-throughput.svg)). Các vùng tô thể hiện mức tải đặt, mốc 0 là bắt đầu workload; đường queue nối các mẫu SQS xấp xỉ, đường replica dùng mẫu Prometheus. Thời gian thu sau tải có giới hạn, không suy diễn trạng thái ngoài hình.
+
+Tạo lại từ ba report `valid` và mẫu đã thu bằng Python có Matplotlib, từ thư mục `experiments/E7`:
+
+```bash
+python plot_e7.py --output-dir ./figures --overwrite
+```
+
+Mặc định script đọc `../results/E7`, xuất PNG 200 dpi và SVG; nếu không truyền `--overwrite`, script dừng khi hình đã tồn tại. Dùng `--results-dir` để chỉ định thư mục kết quả khác. Hình thể hiện một lượt mỗi mức, không có khoảng tin cậy.
+
 ## 5. Khôi phục
 
 Sau drain, kiểm tra ownership tài nguyên `e7-orders-sqs`, `e7-orders-sqs-auth`, HPA và baseline trước khi xóa; chỉ xóa resource thuộc lượt này:
