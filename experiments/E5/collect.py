@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only E8 collector. Ctrl+C finalizes the run; it never starts workload."""
+"""Read-only E5 collector. Ctrl+C finalizes the run; it never starts workload."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
@@ -44,8 +44,8 @@ def load_run(directory):
     metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8-sig"))
     if not isinstance(metadata, dict):
         raise ValueError("metadata.json phải là JSON object")
-    if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E8":
-        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E8 schema_version=1 do run.py init tạo.")
+    if metadata.get("schema_version") != 1 or metadata.get("scenario") != "E5":
+        raise ValueError("Bộ thu này chỉ hỗ trợ hồ sơ E5 schema_version=1 do run.py init tạo.")
     target = metadata.get("target", {})
     if not isinstance(target, dict) or not isinstance(metadata.get("run_id"), str) or not metadata["run_id"]:
         raise ValueError("metadata thiếu run_id hoặc target hợp lệ")
@@ -121,7 +121,7 @@ class Source:
         dep = self.kube("-n", target["namespace"], "get", "deployment", target["deployment"])
         selector = dep["spec"]["selector"]
         if not selector.get("matchLabels") or selector.get("matchExpressions"):
-            raise ValueError("E8 collector yêu cầu Deployment có selector matchLabels đơn giản")
+            raise ValueError("E5 collector yêu cầu Deployment có selector matchLabels đơn giản")
         labels = ",".join(f"{k}={v}" for k, v in sorted(selector["matchLabels"].items()))
         pods = self.kube("-n", target["namespace"], "get", "pods", "-l", labels)["items"]
         spec = dep["spec"]["template"]["spec"]
@@ -188,33 +188,33 @@ def queries(target):
 
 def preflight(source, variant):
     expected = {
-        "keda": {"hpa/e8-orders-keda-hpa", "scaledobjects.keda.sh/e8-orders-sqs"},
+        "keda": {"hpa/e5-orders-keda-hpa", "scaledobjects.keda.sh/e5-orders-sqs"},
     }
     if variant not in ("baseline", "fault"):
-        raise ValueError("Variant E8 phải là baseline hoặc fault")
+        raise ValueError("Variant E5 phải là baseline hoặc fault")
     controller_variant = "keda"
     worker = source.worker()
     replicas = 1
     if worker["desired"] != replicas or worker["ready"] != replicas:
-        raise ValueError(f"E8 {variant} cần {replicas} worker desired/Ready trước lượt")
+        raise ValueError(f"E5 {variant} cần {replicas} worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
             not p["containers"] or any(not c["ready"] or not c["imageID"] for c in p["containers"])
             for p in worker["pods"]):
         raise ValueError("Chờ worker Ready và có image digest trước khi thu")
-    if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e8-orders":
-        raise ValueError("Worker chưa chọn NodePool e8-orders")
+    if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e5-orders":
+        raise ValueError("Worker chưa chọn NodePool e5-orders")
     controllers = source.controllers()
     if set(controllers) != expected[controller_variant]:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
     ns = source.target["namespace"]
     if controller_variant == "keda":
-        scaled = source.kube("-n", ns, "get", "scaledobject", "e8-orders-sqs")
-        hpa = source.kube("-n", ns, "get", "hpa", "e8-orders-keda-hpa")
+        scaled = source.kube("-n", ns, "get", "scaledobject", "e5-orders-sqs")
+        hpa = source.kube("-n", ns, "get", "hpa", "e5-orders-keda-hpa")
         owners = hpa["metadata"].get("ownerReferences", [])
         spec = scaled["spec"]
         triggers = spec.get("triggers", [])
         trigger = triggers[0] if len(triggers) == 1 else {}
-        if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e8"
+        if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e5"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
                 or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
                 or spec.get("pollingInterval", 30) != 30
@@ -225,10 +225,10 @@ def preflight(source, variant):
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E8 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
+            raise ValueError("ScaledObject/HPA E5 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
-            raise ValueError("ScaledObject E8 chưa Ready")
+            raise ValueError("ScaledObject E5 chưa Ready")
     if controller_variant == "keda":
         conditions = hpa.get("status", {}).get("conditions", [])
         if not all(any(c.get("type") == name and c.get("status") == "True" for c in conditions)
@@ -382,7 +382,7 @@ class Collector:
                   "started_at_utc": self.started, "ended_at_utc": None,
                   "prometheus_url": self.source.url, "requested_interval_seconds": self.args.interval,
                   "prometheus_export_step_seconds": self.args.step,
-                  "validity": "not_assessed", "scope": "E8; KEDA + Karpenter worker disruption, validity chưa được đánh giá"}
+                  "validity": "not_assessed", "scope": "E5; KEDA + Karpenter worker disruption, validity chưa được đánh giá"}
         marker = self.directory / "collection.json"
         write_json(marker, record)  # Exclusive creation also prevents two collectors claiming a run.
         previous = signal.getsignal(signal.SIGINT)
@@ -422,7 +422,7 @@ class Collector:
                        *[f"- {warning}" for warning in record["warnings"]],
                        *[f"- Lỗi {item['source']}: {item['error']}" for item in self.errors], "",
                        "Chưa đánh giá tính hợp lệ. Đối chiếu timestamp k6, queue, counters và replica;",
-                       "kiểm tra drain, errors, dropped iterations và node trước khi so sánh E8.",
+                       "kiểm tra drain, errors, dropped iterations và node trước khi so sánh E5.",
                        "Histogram E2E gồm cả error/duplicate; SQS là xấp xỉ, counters không đối soát job ID."]
             with (self.directory / "collection-summary.md").open("x", encoding="utf-8", newline="\n") as stream:
                 stream.write("\n".join(summary) + "\n")
@@ -468,7 +468,7 @@ def main(argv=None):
         print("Đang kiểm tra worker, queue/DLQ và Prometheus...", flush=True)
         before = preflight(source, metadata.get("variant"))
         if args.check:
-            print("Kiểm tra nguồn thu E8 đạt. Chưa thu dữ liệu hay chạy workload.")
+            print("Kiểm tra nguồn thu E5 đạt. Chưa thu dữ liệu hay chạy workload.")
             return 0
         return Collector(directory, metadata, source, args).run(before)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
