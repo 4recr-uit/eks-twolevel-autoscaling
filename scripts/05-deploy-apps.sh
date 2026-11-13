@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
-# Chạy từ repo hạ tầng; chart backend nằm ở repo kế bên.
+# Chart backend nằm ở repo kế bên.
 # Kiểm tra monitoring, credentials và CA trước khi deploy.
 # Sau khi bật KEDA, dùng thêm worker-keda.yaml khi upgrade ba worker; xem README.
 kubectl --context twolevel-dev get crd servicemonitors.monitoring.coreos.com
