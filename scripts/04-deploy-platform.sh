@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Kiểm tra monitoring và render cấu hình trước khi cài platform.
 kubectl --context twolevel-dev wait --for=condition=Established crd/servicemonitors.monitoring.coreos.com --timeout=900s

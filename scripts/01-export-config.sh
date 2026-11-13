@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
 
-# Chạy từ thư mục gốc repo hạ tầng, dùng cấu hình dev.
+# Tìm repo để các đường dẫn hoạt động từ mọi thư mục.
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
+# Dùng cấu hình dev.
 # Chỉ hiển thị thông tin không chứa mật khẩu; không sinh hoặc sửa YAML.
 # Đối chiếu kết quả này để điền các giá trị REPLACE_... trong kubernetes/environments/dev/.
 terraform -chdir=terraform output eks_cluster_name

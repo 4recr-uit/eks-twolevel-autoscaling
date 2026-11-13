@@ -18,7 +18,7 @@ Chuẩn bị S3 backend đã cấu hình trong backend.tf, AWS credentials và t
 
 `platform_contract` là output không chứa secret để bạn xem và điền tên cluster, role, queue, DB host và identity mappings vào YAML Kubernetes. Đây không phải file credentials. `module.karpenter[0]` được giữ để không đổi địa chỉ AWS resources có sẵn; module luôn tạo AWS prerequisites.
 
-Deploy tiếp theo: [DEPLOYMENT.md](../docs/DEPLOYMENT.md). Gỡ workload và node Karpenter theo runbook trước khi review `terraform plan -destroy`; không hủy cluster khi controllers còn cần xử lý tài nguyên bên ngoài.
+Gỡ workload và node Karpenter trước khi review `terraform plan -destroy`; không hủy cluster khi controllers còn cần xử lý tài nguyên bên ngoài.
 
 ## GitHub Actions push ECR
 
@@ -84,8 +84,6 @@ tfvars không bảo đảm resize group qua apply; dùng quy trình resize EKS r
 Nodes này có label `role=system`. Values Kubernetes hiện đặt controllers,
 monitoring và các API/backend trên nhóm đó. Hai `t3.small` cần được kiểm tra
 CPU/RAM và giới hạn Pod trước khi xem là đủ cho toàn bộ workload.
-
-Nguồn: [EKS scaling configuration](https://docs.aws.amazon.com/eks/latest/APIReference/API_NodegroupScalingConfig.html).
 
 Biến mật khẩu Grafana đã được gỡ khỏi Terraform; monitoring dùng Kubernetes
 Secret ở bước triển khai cluster. `removed.tf` vẫn giữ địa chỉ module observability
