@@ -38,10 +38,10 @@ def main():
     profiles = PROFILES if args.profile == "all" else (args.profile,)
     e1 = Path(__file__).resolve().parent.parent
     output = (args.output_dir or e1 / "figures" / f"config-{args.config}").resolve()
-    targets = [output / f"{profile}_{kind}.{ext}" for profile in profiles
-               for kind in ("summary", "timeline") for ext in ("png", "svg")]
+    targets = [output / f"{profile}_{kind}.png" for profile in profiles
+               for kind in ("summary", "timeline")]
     if args.profile == "all":
-        targets.extend(output / f"conclusion_average.{ext}" for ext in ("png", "svg"))
+        targets.append(output / "conclusion_average.png")
     existing = [str(path) for path in targets if path.exists()]
     if existing and not args.overwrite:
         print("Lỗi: hình đã tồn tại; dùng --overwrite để tạo lại:\n" + "\n".join(existing), file=sys.stderr)
@@ -54,17 +54,15 @@ def main():
         for profile, runs in groups.items():
             for kind, fig in (("summary", summary_figure(profile, runs)),
                               ("timeline", timeline_figure(profile, runs, attempts))):
-                for ext in ("png", "svg"):
-                    destination = output / f"{profile}_{kind}.{ext}"
-                    fig.savefig(destination, dpi=200)
-                    print(f"Đã tạo: {destination}")
+                destination = output / f"{profile}_{kind}.png"
+                fig.savefig(destination, dpi=200)
+                print(f"Đã tạo: {destination}")
                 plt.close(fig)
         if args.profile == "all":
             fig = conclusion_figure(groups)
-            for ext in ("png", "svg"):
-                destination = output / f"conclusion_average.{ext}"
-                fig.savefig(destination, dpi=200)
-                print(f"Đã tạo: {destination}")
+            destination = output / "conclusion_average.png"
+            fig.savefig(destination, dpi=200)
+            print(f"Đã tạo: {destination}")
             plt.close(fig)
         print("Đã kiểm tra điều kiện đầu có trong mẫu; validity của lượt vẫn cần được đánh giá thủ công.")
         return 0

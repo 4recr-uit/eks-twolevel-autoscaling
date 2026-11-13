@@ -73,7 +73,7 @@ def git_snapshot(repo_root):
 
 def init_run(args, *, repo_root=REPO_ROOT):
     variants = {"E1": ("warm", "elastic"), "E2": ("elastic",),
-                "E3": ("hpa", "keda"), "E4": ("pod-zero", "node-zero")}
+                "E3": ("hpa", "keda")}
     allowed = variants.get(args.scenario)
     if allowed and args.variant not in allowed:
         raise ValueError(f"{args.scenario} chỉ hỗ trợ variant: {', '.join(allowed)}")
@@ -92,7 +92,7 @@ def init_run(args, *, repo_root=REPO_ROOT):
 
     metadata = {
         "schema_version": 1,
-        "design_revision": "warm-elastic-keda-karpenter-v1" if args.scenario in ("E1", "E2", "E3", "E4") else None,
+        "design_revision": "warm-elastic-keda-karpenter-v1" if args.scenario in ("E1", "E2", "E3") else None,
         "run_id": run_id,
         "scenario": args.scenario,
         "variant": args.variant,
@@ -178,7 +178,7 @@ def parser():
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
     init.add_argument("--scenario", default="E1", choices=["E1"])
     init.add_argument("--variant", required=True, choices=["warm", "elastic"])
-    init.add_argument("--profile", required=True, choices=["steady", "step", "burst"])
+    init.add_argument("--profile", required=True, choices=["step", "burst"])
     init.add_argument("--attempt", required=True, type=attempt)
     init.add_argument("--config", type=int, choices=(1, 2, 3), default=1,
                       help="cấu hình E1: 1=min 1, 2=min 3, 3=min 5; mặc định 1")

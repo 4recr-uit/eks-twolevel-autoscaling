@@ -1,6 +1,6 @@
 # Biểu đồ E1
 
-Bộ script đọc các lượt trong `experiments/results/E1` và tạo hình tại `experiments/E1/figures/config-N` hoặc `figures/comparison`. Không cần kết nối cluster và script không sửa dữ liệu kết quả gốc. Các file PNG phù hợp đưa vào slide; SVG có thể phóng lớn.
+Bộ script đọc các lượt trong `experiments/results/E1` và tạo hình tại `experiments/E1/figures/config-N` hoặc `figures/comparison`. Không cần kết nối cluster và script không sửa dữ liệu kết quả gốc. Các file PNG phù hợp đưa vào slide.
 
 ## Cài đặt và chạy
 
@@ -55,7 +55,7 @@ Xem các tùy chọn đường dẫn bằng `python visualize-scripts/plot_e1.py
 | `conclusion_average` | Trung bình của từng chỉ số, so sánh Warm và Elastic theo từng profile |
 | `comparison/burst_comparison_average` | Trung bình Burst của cả ba mức worker, gồm p95 E2E, đỉnh queue, Ready Pod-phút và node-phút |
 
-Mỗi hình được xuất thành `.png` và `.svg`; nhãn trong hình bằng tiếng Anh. Cột trong hình tổng hợp và kết luận là trung bình số học của các lượt; p95 trung bình **không phải** p95 gộp của mọi job. Hình kết luận chỉ được tạo khi chạy cả hai profile; `--profile step` hoặc `--profile burst` không cập nhật hình này. Trục thời gian timeline dùng thời điểm bắt đầu workload từ report làm mốc, còn tốc độ tải được đánh dấu theo kịch bản cấu hình.
+Mỗi hình được xuất thành `.png`; nhãn trong hình bằng tiếng Anh. Cột trong hình tổng hợp và kết luận là trung bình số học của các lượt; p95 trung bình **không phải** p95 gộp của mọi job. Hình kết luận chỉ được tạo khi chạy cả hai profile; `--profile step` hoặc `--profile burst` không cập nhật hình này. Trục thời gian timeline dùng thời điểm bắt đầu workload từ report làm mốc, còn tốc độ tải được đánh dấu theo kịch bản cấu hình.
 
 Queue là tổng visible và in-flight từ các mẫu SQS gần đúng; các đường nối chỉ giúp theo dõi xu hướng và bị ngắt khi thiếu mẫu dài. Node-phút dùng node Kubernetes thuộc `e1-orders` trong cửa sổ 60 giây trước đến 60 giây sau tải, không phải chi phí EC2. Do Step và Burst có thời lượng khác nhau, chỉ so sánh node-phút Warm/Elastic trong cùng profile. Counter success và CPU không được dùng để vẽ so sánh chính do giới hạn dữ liệu đã nêu trong README E1.
 

@@ -3,7 +3,7 @@ import { check } from 'k6';
 import { Counter, Gauge, Rate } from 'k6/metrics';
 
 // Kịch bản được chọn bằng tên file; tránh âm thầm bỏ qua lệnh cũ.
-if (__ENV.PROFILE) throw new Error('Không dùng PROFILE: chọn stead.js, step.js hoặc burst.js');
+if (__ENV.PROFILE) throw new Error('Không dùng PROFILE: chọn step.js hoặc burst.js');
 
 export const settings = {
   batchSize: Number(__ENV.BATCH_SIZE || 1),
@@ -39,7 +39,7 @@ const config = {
 export function setupFor(profile, low, high, version) {
   const startedAt = Date.now();
   workloadStartedAt.add(startedAt);
-  config.profile.add({ steady: 0, step: 1, burst: 2 }[profile]);
+  config.profile.add({ step: 1, burst: 2 }[profile]);
   config.low.add(low); config.high.add(high); config.batch.add(batchSize);
   config.units.add(workUnits); config.db.add({ none: 0, light: 1, full: 2 }[dbMode]);
   config.version.add(version);
