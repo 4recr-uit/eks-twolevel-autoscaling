@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# E0: chạy TỪNG NHÓM LỆNH trong Git Bash; không chạy toàn bộ file.
-exit 0
-
+# E0: chạy TỪNG NHÓM LỆNH trong Bash; không chạy toàn bộ file.
 # Terminal này cần đang ở thư mục experiments/E0.
+exit 0
 
 # Chuẩn bị: dừng nếu HPA/ScaledObject nào trỏ đến orders-worker.
 kubectl --context twolevel-dev -n retailstore get hpa \
