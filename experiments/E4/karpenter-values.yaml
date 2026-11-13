@@ -1,8 +1,8 @@
 # Overlay dùng cùng kubernetes/environments/dev/platform.yaml.
-# Release E7 sở hữu riêng NodePool/NodeClass; không tạo auth/monitor chung.
+# Release E4 sở hữu riêng NodePool/NodeClass; không tạo auth/monitor chung.
 nodePool:
   enabled: true
-  name: e7-orders
+  name: e4-orders
   instanceTypes: [c7i-flex.large]
   capacityTypes: [on-demand]
   cpuLimit: "12"

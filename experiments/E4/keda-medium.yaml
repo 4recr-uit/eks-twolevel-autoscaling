@@ -1,10 +1,10 @@
 apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
-  name: e7-orders-sqs-auth
+  name: e4-orders-sqs-auth
   namespace: retailstore
   labels:
-    experiments.retailstore.dev/owner: e7
+    experiments.retailstore.dev/owner: e4
 spec:
   podIdentity:
     provider: aws
@@ -13,10 +13,10 @@ spec:
 apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
-  name: e7-orders-sqs
+  name: e4-orders-sqs
   namespace: retailstore
   labels:
-    experiments.retailstore.dev/owner: e7
+    experiments.retailstore.dev/owner: e4
 spec:
   scaleTargetRef:
     name: orders-worker
@@ -26,13 +26,13 @@ spec:
   cooldownPeriod: 300
   advanced:
     horizontalPodAutoscalerConfig:
-      name: e7-orders-keda-hpa
+      name: e4-orders-keda-hpa
   triggers:
     - type: aws-sqs-queue
       authenticationRef:
-        name: e7-orders-sqs-auth
+        name: e4-orders-sqs-auth
       metadata:
         queueURLFromEnv: SQS_QUEUE_URL
         awsRegion: us-east-1
-        queueLength: "20"
+        queueLength: "10"
         scaleOnInFlight: "true"

@@ -72,8 +72,8 @@ def git_snapshot(repo_root):
 
 
 def init_run(args, *, repo_root=REPO_ROOT):
-    variants = {"E7": ("q-low", "q-medium", "q-high"), "E2": ("elastic",),
-                "E3": ("hpa", "keda"), "E4": ("pod-zero", "node-zero")}
+    variants = {"E4": ("q-low", "q-medium", "q-high"), "E2": ("elastic",),
+                "E3": ("hpa", "keda")}
     allowed = variants.get(args.scenario)
     if allowed and args.variant not in allowed:
         raise ValueError(f"{args.scenario} chỉ hỗ trợ variant: {', '.join(allowed)}")
@@ -88,7 +88,7 @@ def init_run(args, *, repo_root=REPO_ROOT):
 
     metadata = {
         "schema_version": 1,
-        "design_revision": "queue-target-sensitivity-v1" if args.scenario in ("E7", "E2", "E3", "E4") else None,
+        "design_revision": "queue-target-sensitivity-v1" if args.scenario in ("E4", "E2", "E3") else None,
         "run_id": run_id,
         "scenario": args.scenario,
         "variant": args.variant,
@@ -170,7 +170,7 @@ def parser():
     result = argparse.ArgumentParser(description=__doc__)
     sub = result.add_subparsers(dest="command", required=True)
     init = sub.add_parser("init", help="tạo hồ sơ cục bộ cho một lượt; không truy cập cluster")
-    init.add_argument("--scenario", default="E7", choices=["E7"])
+    init.add_argument("--scenario", default="E4", choices=["E4"])
     init.add_argument("--variant", required=True, choices=["q-low", "q-medium", "q-high"])
     init.add_argument("--profile", required=True, choices=["steady", "step", "burst"])
     init.add_argument("--attempt", required=True, type=attempt)

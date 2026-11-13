@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tóm tắt một lượt E7 từ dữ liệu đã thu; không truy cập cluster."""
+"""Tóm tắt một lượt E4 từ dữ liệu đã thu; không truy cập cluster."""
 
 import argparse
 import datetime as dt
@@ -107,10 +107,10 @@ def summarize(directory, after=60, before=60):
                      "containers": initial_worker.get("containers"),
                      "image_ids": sorted({c.get("imageID") for p in initial_worker.get("pods", [])
                                           for c in p.get("containers", []) if c.get("imageID")})}
-    if metadata.get("scenario") != "E7" or collection.get("status") not in ("finished", "partial"):
-        raise ValueError("Cần hồ sơ E7 có collection đã kết thúc")
+    if metadata.get("scenario") != "E4" or collection.get("status") not in ("finished", "partial"):
+        raise ValueError("Cần hồ sơ E4 có collection đã kết thúc")
     if metadata.get("variant") not in ("q-low", "q-medium", "q-high"):
-        raise ValueError("Variant E7 phải là q-low, q-medium hoặc q-high")
+        raise ValueError("Variant E4 phải là q-low, q-medium hoặc q-high")
     k6 = read_json(directory / "raw/k6-summary.json")["metrics"]
     profile_codes = {0: "steady", 1: "step", 2: "burst"}
     db_codes = {0: "none", 1: "light", 2: "full"}
@@ -140,7 +140,7 @@ def summarize(directory, after=60, before=60):
         warnings.append("collection_partial")
     if k6.get("dropped_iterations", {}).get("count", 0):
         warnings.append("k6_dropped_iterations")
-    if k6.get("e7_failed_requests", {}).get("passes", 0):
+    if k6.get("e4_failed_requests", {}).get("passes", 0):
         warnings.append("k6_failed_requests")
     completed = count_by_label(matrix(directory, "worker_tasks_processed_total"), "status", start, end)
     completed_during_load = count_by_label(matrix(directory, "worker_tasks_processed_total"), "status", start, load_end)
@@ -224,7 +224,7 @@ def summarize(directory, after=60, before=60):
     if topology_path.exists():
         topology = [json.loads(line) for line in topology_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         points = sorted((timestamp(x["observed_at_utc"]),
-                         sum(n.get("labels", {}).get("karpenter.sh/nodepool") == "e7-orders"
+                         sum(n.get("labels", {}).get("karpenter.sh/nodepool") == "e4-orders"
                              for n in x["data"].get("nodes", []))) for x in topology)
         if points:
             node_minutes = replica_minutes([{"values": points}], start - before, end,
@@ -243,7 +243,7 @@ def summarize(directory, after=60, before=60):
         "workload_finished_utc": dt.datetime.fromtimestamp(load_end, dt.timezone.utc).isoformat(),
         "resource_window_before_workload_seconds": before,
         "resource_window_after_workload_seconds": after,
-        "accepted_jobs": k6.get("e7_accepted_jobs", {}).get("count"),
+        "accepted_jobs": k6.get("e4_accepted_jobs", {}).get("count"),
         "success_per_second_during_workload_approx": (round(completed_during_load["success"] / (load_end - start), 2)
                                                       if "success" in completed_during_load else None),
         "completed_by_status_approx": completed or None,
@@ -253,7 +253,7 @@ def summarize(directory, after=60, before=60):
         "drain_confirmation_seconds_approx": drain,
         "ready_pod_minutes_approx": ready_minutes,
         "worker_node_minutes_approx": node_minutes,
-        "worker_node_scope": "e7-orders; workload start - before to workload end + after; Kubernetes node presence, not EC2 billed duration",
+        "worker_node_scope": "e4-orders; workload start - before to workload end + after; Kubernetes node presence, not EC2 billed duration",
         "mean_worker_cpu_millicores_approx": round(sum(cpu_deltas) / (end - start) * 1000, 1) if cpu_deltas else None,
         "first_scale_out_after_start_seconds_approx": first_scale,
         "first_scale_out_after_high_seconds_approx": first_high_scale,
