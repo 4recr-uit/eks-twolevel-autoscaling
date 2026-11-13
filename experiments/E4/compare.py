@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""So sánh các report E7 đã được người chạy kiểm tra; chỉ đọc file."""
+"""So sánh các report E4 đã được người chạy kiểm tra; chỉ đọc file."""
 
 import argparse
 import json
@@ -29,7 +29,7 @@ def compare(reports):
     ids = [item["run_id"] for item in reports]
     if len(ids) != len(set(ids)):
         raise ValueError("Run ID bị lặp")
-    lines = [f"# So sánh E7 — {reference['profile']}", "",
+    lines = [f"# So sánh E4 — {reference['profile']}", "",
              "Trung vị [min–max] (số lượt có dữ liệu / số lượt); người chạy cần kiểm tra tính hợp lệ.", "",
              "| Nhánh | Lượt | Accepted | Success đến drain | Throughput trong tải (task/s) | p95 E2E (s) | Peak backlog | Drain (s) | Ready Pod-minutes | Worker Node-minutes |",
              "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
