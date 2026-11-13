@@ -1,44 +1,40 @@
-# Triển khai bằng các lệnh tường minh
+# Triển khai môi trường dev
 
-Hướng dẫn chạy chính nằm trong [scripts/README.md](../scripts/README.md). Chạy Bash từ repo root. Mỗi script là danh sách lệnh AWS CLI/Helm/kubectl có thể chạy riêng; không còn common.sh, config.py, các tham số --apply/--env/--backend, hoặc values sinh tự động.
+Các lệnh dưới đây chạy bằng Bash từ thư mục `scripts` của repo hạ tầng. Script triển khai thực thi trực tiếp trên context `twolevel-dev`.
 
-## Chuẩn bị
+## Chuẩn bị cấu hình
 
-1. Tạo hạ tầng AWS bằng Terraform; nếu đã có add-on do Terraform quản lý, hoàn tất [MIGRATION.md](MIGRATION.md) trước.
-2. Chạy `bash scripts/01-export-config.sh` để xem platform_contract. Điền các REPLACE_... trong `kubernetes/environments/dev/`, bao gồm karpenter.yaml, platform.yaml, autoscaling.yaml và apps/*.yaml. Điền AMI alias đã kiểm thử trong platform.yaml.
-3. Kiểm tra image/tag, DB users/schema, TLS/CA và Secret names. Values không chứa mật khẩu. Image ứng dụng phải được build/push trước; chart và image cần cùng phiên bản hỗ trợ /ready.
-4. Mẫu dev dùng region us-east-1, cluster twolevel-autoscaling-dev, context twolevel-dev và repo backend ở thư mục kế bên. Sửa lệnh/path/YAML nếu khác; không còn tự đối chiếu account/state/context qua helper.
+1. Tạo hạ tầng bằng Terraform và hoàn tất chuyển quyền quản lý add-on nếu cần.
+2. Chạy `bash 01-export-config.sh`; đối chiếu output với values trong `kubernetes/environments/dev/`, bao gồm image, queue URL, database endpoint, NodePool và AMI alias.
+3. Chuẩn bị database users/schema, image và quyền truy cập. Tạo bản local của hai mẫu Secret trong `kubernetes/environments/dev/secrets/`, điền credentials và không commit các file local.
+4. Chuẩn bị file RDS CA bundle trên máy. Các Secret và ConfigMap CA sẽ được tạo sau bước bootstrap.
 
-## Thứ tự
-
-```bash
-bash scripts/02-bootstrap.sh
-# Tạo các Secret ứng dụng và grafana-admin, chuẩn bị DB users/schema.
-bash scripts/03-deploy-monitoring.sh
-bash scripts/04-deploy-platform.sh
-bash scripts/05-deploy-apps.sh
-bash scripts/06-deploy-autoscaling.sh
-bash scripts/07-verify.sh
-bash scripts/08-port-forward.sh
-```
-
-Các lệnh deploy thực thi ngay, không có chế độ preview ngầm. Muốn xem manifest trước, dùng Helm template trực tiếp, ví dụ:
+## Thứ tự triển khai
 
 ```bash
-helm template cart ../retailstore-backend-microservices/src/cart/chart \
-  --namespace retailstore -f kubernetes/environments/dev/apps/cart.yaml
+bash 02-bootstrap.sh
+bash 02-apply-secrets.sh
+python 02-create-rds-ca-configmap.py --ca-file /path/to/global-bundle.pem --dry-run
+python 02-create-rds-ca-configmap.py --ca-file /path/to/global-bundle.pem
+bash 03-deploy-monitoring.sh
+bash 04-deploy-platform.sh
+bash 05-deploy-apps.sh
+bash 06-deploy-autoscaling.sh
+bash 06-enable-nodepool.sh
+bash 07-verify.sh
+bash 08-port-forward.sh
 ```
 
-Mẫu mặc định có monitoring. Kubernetes namespace/ServiceAccount dùng manifest trong repo; các giá trị phải khớp Pod Identity của Terraform. Worker không khai báo replicas khi KEDA quản lý; khi tạo lần đầu Kubernetes có thể khởi tạo một replica trước khi áp dụng ScaledObject.
+Thay đường dẫn CA bằng file thực tế. `02-apply-secrets.sh` yêu cầu cả `database-secrets.local.yaml` và `grafana-admin.local.yaml`. Bước autoscaling tạo release cấu hình ban đầu với NodePool tắt; bước tiếp theo bật NodePool trước khi verify.
 
 ## Nghiệm thu và cập nhật
 
-Verify kiểm tra rollout/Ready, không chứng minh toàn bộ giao dịch thành công. Cần thử API → SQS → worker → DB; gửi tải có giới hạn để quan sát pod/node tăng rồi giảm, đối chiếu queue/DLQ và Prometheus targets. Không tạo thêm HPA độc lập cho worker đang do KEDA điều khiển.
+`07-verify.sh` kiểm tra rollout và trạng thái Ready. Kiểm tra thêm luồng API → SQS → worker → database, queue/DLQ và Prometheus targets; quan sát scale-out/scale-in với tải phù hợp.
 
-Sửa values rồi chạy lại đúng script. Khi push lại latest, workload cũ chưa tự restart; chạy lệnh rollout restart trong scripts/README.md. Các release có thể cập nhật từng phần nếu một lệnh giữa script lỗi: xem helm status/history, sửa lỗi hoặc rollback release liên quan rồi chạy lại.
+Khi `worker-scaling` đã tồn tại, `05-deploy-apps.sh` sẽ dừng để tránh ghi đè replica do KEDA quản lý. Khi nâng cấp chart Cart, Orders hoặc Checkout, dùng values của service **và** `worker-keda.yaml`, như ở `06-deploy-autoscaling.sh`; giữ `worker.scaledObject.enabled=false`. Kiểm tra release và values trước khi nâng cấp từng ứng dụng. Nếu push lại image cùng tag, restart workload liên quan để Pod tải lại image.
 
-## Gỡ
+## Gỡ triển khai
 
-Dừng tải/producer, xử lý hoặc bảo toàn message rồi mới chạy `bash scripts/09-teardown.sh`. Script gỡ năm backend/scaler, NodePool và controller Karpenter theo thứ tự; giữ monitoring/KEDA, CRDs, namespaces, Secrets/PVCs và AWS resources. Nếu còn NodeClaim thì controller được giữ lại.
+Dừng producer, xử lý hoặc bảo toàn message trước khi chạy `bash 09-teardown.sh`. Script gỡ ứng dụng, scaler, NodePool và Karpenter controller theo thứ tự; giữ monitoring/KEDA, CRD, namespace, Secret/PVC và tài nguyên AWS. Nếu còn NodeClaim, script giữ controller lại.
 
-Terraform destroy là bước riêng sau khi controller đã xử lý tài nguyên ngoài cluster và bạn đã review dữ liệu/snapshot cần giữ. Không force-remove finalizers để che lỗi drain/IAM.
+Terraform destroy là bước riêng sau khi kiểm tra tài nguyên ngoài cluster và dữ liệu cần giữ. Không xóa finalizer để bỏ qua lỗi drain hoặc IAM.
