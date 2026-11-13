@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Dùng một replica ban đầu; chuyển sang KEDA trước khi tạo ScaledObject.
 kubectl --context twolevel-dev -n retailstore get deployment carts-worker orders-worker checkout-worker

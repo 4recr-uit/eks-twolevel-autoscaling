@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
 
-# Chạy từ thư mục gốc repo hạ tầng, dùng cấu hình dev.
+# Dùng cấu hình dev.
 # Chỉ chạy khi muốn gỡ ứng dụng; dừng tải/producer và xử lý hoặc bảo toàn message trước.
 # Giữ lại KEDA, monitoring, CRDs, namespace, Secret/PVC và AWS resources.
 helm uninstall worker-scaling --namespace retailstore --kube-context twolevel-dev --ignore-not-found --wait --timeout 900s

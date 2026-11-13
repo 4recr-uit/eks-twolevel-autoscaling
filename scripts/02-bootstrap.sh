@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # Xác thực AWS và cấu hình context EKS dev.
 aws sts get-caller-identity

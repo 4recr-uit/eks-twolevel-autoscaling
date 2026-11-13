@@ -1,0 +1,12 @@
+worker:
+  externalAutoscaling: true
+  nodeSelector:
+    karpenter.sh/nodepool: e4-orders
+  # E4 uses a larger request to make node capacity visible under the pilot load.
+  # Keep identical for all queue targets and revalidate throughput after E0.
+  resources:
+    requests:
+      cpu: 500m
+      memory: 256Mi
+  scaledObject:
+    enabled: false

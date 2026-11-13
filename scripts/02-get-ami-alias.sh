@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
 
 # amiAlias xác định bản image hệ điều hành dùng để Karpenter tạo EC2 node. AMI chứa hệ điều hành và các thành phần cần để node tham gia EKS; khác với Docker image của ứng dụng.
 

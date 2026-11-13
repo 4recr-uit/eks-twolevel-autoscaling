@@ -25,7 +25,7 @@ def configure():
         "font.family": "DejaVu Sans", "font.size": 11, "text.color": INK,
         "axes.labelcolor": INK, "xtick.color": MUTED, "ytick.color": MUTED,
         "axes.edgecolor": GRID, "figure.facecolor": "white", "axes.facecolor": "white",
-        "axes.spines.top": False, "axes.spines.right": False, "svg.fonttype": "none",
+        "axes.spines.top": False, "axes.spines.right": False,
         "savefig.facecolor": "white",
     })
 

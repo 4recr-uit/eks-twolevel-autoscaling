@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Script không nhận tham số; xem scripts/README.md." >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Script không nhận tham số." >&2; exit 2; }
 
-# Chạy từ thư mục gốc repo hạ tầng, dùng cấu hình dev.
+# Dùng cấu hình dev.
 # Chỉ kiểm tra trạng thái; không sinh cấu hình hoặc gửi tải thử.
 kubectl --context twolevel-dev -n kube-system rollout status deployment/metrics-server --timeout=900s
 kubectl --context twolevel-dev wait --for=condition=Available apiservice/v1beta1.metrics.k8s.io --timeout=120s

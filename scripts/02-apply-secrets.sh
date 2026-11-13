@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-[[ $# -eq 0 ]] || { echo "Usage: bash scripts/02-apply-secrets.sh" >&2; exit 2; }
+[[ $# -eq 0 ]] || { echo "Usage: bash 02-apply-secrets.sh" >&2; exit 2; }
+cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.."
 
 # 1. Kiểm tra hai file local đã được điền credentials.
 test -f kubernetes/environments/dev/secrets/database-secrets.local.yaml

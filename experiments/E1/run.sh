@@ -11,8 +11,8 @@ case "$command" in
   report) exec python ./report.py "$@" ;;
   compare) exec python ./compare.py "$@" ;;
   load)
-    if (($# != 2)); then echo "Dùng: bash run.sh load steady|step|burst RUN_DIR" >&2; exit 2; fi
-    case "$1" in steady) file=stead.js ;; step) file=step.js ;; burst) file=burst.js ;; *) echo "Profile không hợp lệ" >&2; exit 2 ;; esac
+    if (($# != 2)); then echo "Dùng: bash run.sh load step|burst RUN_DIR" >&2; exit 2; fi
+    case "$1" in step) file=step.js ;; burst) file=burst.js ;; *) echo "Profile không hợp lệ" >&2; exit 2 ;; esac
     dir=$2
     if [[ ! -f "$dir/metadata.json" || ! -d "$dir/raw" || -e "$dir/raw/k6-summary.json" ]]; then
       echo "RUN_DIR không hợp lệ hoặc summary đã tồn tại; không ghi đè." >&2; exit 1
