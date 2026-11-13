@@ -73,7 +73,7 @@
 
 | **Câu hỏi**  | Giá trị `queueLength` của KEDA ảnh hưởng thế nào đến performance và resource usage?                                                                     |
 | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Thiết kế** | Biến độc lập là `queueLength` với ba giá trị `Q_low`, `Q_medium`, `Q_high`. Dùng **một workload đại diện** (Step hoặc Burst). Các biến khác giữ nguyên. |
+| **Thiết kế** | Biến độc lập là `queueLength` với ba giá trị `Q_low`, `Q_medium`, `Q_high`. Các lượt đã thực hiện dùng workload Step và giữ các biến khác không đổi. |
 
 |Mục|Nội dung|
 |---|---|
@@ -87,7 +87,7 @@
 
 | **Câu hỏi**   | Hệ thống phục hồi thế nào khi Worker Pod (hoặc Node) bị mất lúc queue đang backlog và đang scale-out?                            |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **Thiết kế**  | Bản nhẹ: `kubectl delete pod` hoặc terminate một Node trong lúc chạy E2, thay vì cài Chaos Mesh/Litmus. Chỉ làm khi E1–E4 đã ổn. |
+| **Thiết kế**  | So sánh baseline với trường hợp gián đoạn một Pod hoặc Node khi đang có tải; công cụ hiện hỗ trợ phân tích gián đoạn Pod. |
 
 |Mục|Nội dung|
 |---|---|

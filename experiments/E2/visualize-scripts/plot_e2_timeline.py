@@ -124,7 +124,7 @@ def draw(data: dict):
         "font.family": "DejaVu Sans", "font.size": 11, "text.color": INK,
         "axes.labelcolor": INK, "xtick.color": MUTED, "ytick.color": MUTED,
         "axes.edgecolor": GRID, "figure.facecolor": "white", "axes.facecolor": "white",
-        "axes.spines.top": False, "axes.spines.right": False, "svg.fonttype": "none",
+        "axes.spines.top": False, "axes.spines.right": False,
         "savefig.facecolor": "white",
     })
     fig, axes = plt.subplots(3, 1, figsize=(12, 7.8), sharex=True)
@@ -230,7 +230,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=E2_DIR / "figures")
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()
-    targets = [args.output_dir / f"e2-e1-style-timeline.{ext}" for ext in ("png", "svg")]
+    targets = [args.output_dir / "e2-e1-style-timeline.png"]
     if not args.overwrite and any(path.exists() for path in targets):
         print("Ảnh đã tồn tại; dùng --overwrite nếu muốn tạo lại.", file=sys.stderr)
         return 1

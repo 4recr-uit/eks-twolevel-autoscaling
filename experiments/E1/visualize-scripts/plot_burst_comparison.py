@@ -25,7 +25,7 @@ def main():
             or any(n <= 0 or n > 99 for n in args.attempts)):
         print("Lỗi: chọn 1–4 attempt khác nhau, mỗi attempt từ 1 đến 99.", file=sys.stderr)
         return 2
-    targets = [args.output_dir / f"burst_comparison_average.{ext}" for ext in ("png", "svg")]
+    targets = [args.output_dir / "burst_comparison_average.png"]
     if not args.overwrite and any(path.exists() for path in targets):
         print("Lỗi: hình đã tồn tại; dùng --overwrite để tạo lại.", file=sys.stderr)
         return 1
