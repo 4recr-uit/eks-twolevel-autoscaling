@@ -25,8 +25,8 @@ export function optionsFor(startRate, stages) {
     timeUnit: '1s', preAllocatedVUs: vus, maxVUs: vus, stages } } };
 }
 
-const acceptedJobs = new Counter('e8_accepted_jobs');
-const failedRequests = new Rate('e8_failed_requests');
+const acceptedJobs = new Counter('e5_accepted_jobs');
+const failedRequests = new Rate('e5_failed_requests');
 const workloadStartedAt = new Gauge('workload_started_at_unix_ms');
 const workloadFinishedAt = new Gauge('workload_finished_at_unix_ms');
 const config = {
@@ -53,7 +53,7 @@ export function teardown() {
 }
 
 export function sendJob() {
-  const response = http.post(`${baseUrl}/jobs`, JSON.stringify({ workUnits, dbMode, batchSize, customerId: 'test-e8' }),
+  const response = http.post(`${baseUrl}/jobs`, JSON.stringify({ workUnits, dbMode, batchSize, customerId: 'test-e5' }),
     { headers: { 'Content-Type': 'application/json' } });
   let body;
   try { body = response.json(); } catch (_) { body = {}; }

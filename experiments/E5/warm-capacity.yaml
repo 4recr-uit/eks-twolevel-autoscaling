@@ -1,24 +1,24 @@
 # Tạm giữ chỗ cho tối đa 10 worker với requests tương đương Orders.
-# Xóa Deployment sau khi tất cả pod Ready; NodePool E8 không consolidate.
+# Xóa Deployment sau khi tất cả pod Ready; NodePool E5 không consolidate.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: e8-warm-capacity
+  name: e5-warm-capacity
   namespace: retailstore
   labels:
-    experiments.retailstore.dev/owner: e8
+    experiments.retailstore.dev/owner: e5
 spec:
   replicas: 10
   selector:
     matchLabels:
-      app: e8-warm-capacity
+      app: e5-warm-capacity
   template:
     metadata:
       labels:
-        app: e8-warm-capacity
+        app: e5-warm-capacity
     spec:
       nodeSelector:
-        karpenter.sh/nodepool: e8-orders
+        karpenter.sh/nodepool: e5-orders
       containers:
         - name: reserve
           image: registry.k8s.io/pause:3.9

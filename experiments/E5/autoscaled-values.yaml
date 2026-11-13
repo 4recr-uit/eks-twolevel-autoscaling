@@ -1,8 +1,8 @@
 worker:
   externalAutoscaling: true
   nodeSelector:
-    karpenter.sh/nodepool: e8-orders
-  # E8 uses a larger request to make node capacity visible under the pilot load.
+    karpenter.sh/nodepool: e5-orders
+  # E5 uses a larger request to make node capacity visible under the pilot load.
   # Keep identical in baseline and fault branches and revalidate throughput after E0.
   resources:
     requests:

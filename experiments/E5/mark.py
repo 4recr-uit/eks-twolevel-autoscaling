@@ -22,7 +22,7 @@ def main():
         parser.error("Pod name or UID invalid")
     metadata = json.loads((args.run_dir / "metadata.json").read_text(encoding="utf-8-sig"))
     collection = json.loads((args.run_dir / "collection.json").read_text(encoding="utf-8-sig"))
-    if metadata.get("scenario") != "E8" or metadata.get("variant") != "fault" or collection.get("status") != "collecting":
+    if metadata.get("scenario") != "E5" or metadata.get("variant") != "fault" or collection.get("status") != "collecting":
         parser.error("fault run must be collecting")
     marker = {"marked_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(), "pod": args.pod,
               "pod_uid": args.pod_uid, "meaning": "manual action requested after this marker; exact deletion time must be verified"}
