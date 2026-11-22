@@ -204,8 +204,11 @@ def preflight(source, variant):
     if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e3-orders":
         raise ValueError("Worker chưa chọn NodePool e3-orders")
     initial_nodes = [n for n in source.nodes() if n.get("labels", {}).get("karpenter.sh/nodepool") == "e3-orders"]
-    if len(initial_nodes) != 1 or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in initial_nodes[0].get("conditions", [])):
-        raise ValueError("E3 cần đúng một node worker Ready trong NodePool e3-orders trước lượt")
+    if len(initial_nodes) != 4 or any(node.get("deleting_at") or not any(c.get("type") == "Ready" and c.get("status") == "True" for c in node.get("conditions", [])) for node in initial_nodes):
+        raise ValueError("E3 cần đúng 4 node worker Ready trong NodePool e3-orders trước lượt")
+    reserve_pods = source.kube("-n", source.target["namespace"], "get", "pods", "-l", "app=e3-warm-capacity").get("items", [])
+    if reserve_pods:
+        raise ValueError("E3 còn Pod giữ chỗ; chờ đủ 4 Pod Ready rồi xóa Deployment giữ chỗ trước lượt")
     controllers = source.controllers()
     if set(controllers) != expected[variant]:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
@@ -215,12 +218,12 @@ def preflight(source, variant):
         spec = hpa["spec"]
         metrics = spec.get("metrics", [])
         if (hpa["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e3"
-                or spec.get("minReplicas", 1) != 1 or spec.get("maxReplicas") != 10
+                or spec.get("minReplicas", 1) != 1 or spec.get("maxReplicas") != 20
                 or len(metrics) != 1 or metrics[0].get("type") != "Resource"
                 or metrics[0].get("resource", {}).get("name") != "cpu"
                 or metrics[0].get("resource", {}).get("target", {}).get("type") != "Utilization"
                 or metrics[0].get("resource", {}).get("target", {}).get("averageUtilization") != 60):
-            raise ValueError("HPA E3 không đúng cấu hình min=1, max=10, CPU=60% hoặc thiếu label E3")
+            raise ValueError("HPA E3 không đúng cấu hình min=1, max=20, CPU=60% hoặc thiếu label E3")
     if variant == "keda":
         scaled = source.kube("-n", ns, "get", "scaledobject", "e3-orders-sqs")
         hpa = source.kube("-n", ns, "get", "hpa", "e3-orders-keda-hpa")
@@ -230,16 +233,16 @@ def preflight(source, variant):
         trigger = triggers[0] if len(triggers) == 1 else {}
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e3"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval", 30) != 30
-                or spec.get("cooldownPeriod", 300) != 300
+                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 20
+                or spec.get("pollingInterval") != 10
+                or spec.get("cooldownPeriod") != 120
                 or hpa.get("spec", {}).get("minReplicas", 1) != 1
-                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or hpa.get("spec", {}).get("maxReplicas") != 20
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E3 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
+            raise ValueError("ScaledObject/HPA E3 không đúng owner hoặc cấu hình min=1, max=20, queueLength=10")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E3 chưa Ready")
