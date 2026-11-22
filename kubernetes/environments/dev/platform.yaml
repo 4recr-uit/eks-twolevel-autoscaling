@@ -13,7 +13,7 @@ runtime:
   environment: dev
   node_role: twolevel-autoscaling-dev-karpenter-node-role
   security_group_ids:
-    - sg-0dbc668f0f71ef8be
-    - sg-045d95fcffd7b9661
+    - sg-0f34a9442b107f21b
+    - sg-0aae6cbea5c5c2d86
   namespaces:
     retailstore: retailstore
