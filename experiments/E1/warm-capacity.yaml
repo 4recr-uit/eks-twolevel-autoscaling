@@ -1,4 +1,4 @@
-# Tạm giữ chỗ cho tối đa 10 worker với requests tương đương Orders.
+# Tạm giữ chỗ tương đương 10 worker với requests tương đương Orders.
 # Xóa Deployment sau khi tất cả pod Ready; NodePool E1 không consolidate.
 apiVersion: apps/v1
 kind: Deployment

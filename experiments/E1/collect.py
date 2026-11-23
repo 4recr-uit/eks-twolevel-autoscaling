@@ -221,8 +221,6 @@ def preflight(source, variant, config=1):
     worker_nodes = {pod.get("node") for pod in worker["pods"]}
     if None in worker_nodes or not worker_nodes.issubset(node_names):
         raise ValueError("Worker chưa được đặt trên node E1 Ready")
-    if variant == "warm" and len(node_names) != 4:
-        raise ValueError("Warm E1 cần đúng 4 node E1 Ready")
     if variant == "elastic" and worker_nodes != node_names:
         raise ValueError("Elastic E1 còn node E1 không chạy worker; kiểm tra capacity trước lượt")
     controllers = source.controllers()
@@ -238,16 +236,16 @@ def preflight(source, variant, config=1):
         trigger = triggers[0] if len(triggers) == 1 else {}
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e1"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != replicas or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval", 30) != 30
-                or spec.get("cooldownPeriod", 300) != 300
+                or spec.get("minReplicaCount") != replicas or spec.get("maxReplicaCount") != 20
+                or spec.get("pollingInterval") != 10
+                or spec.get("cooldownPeriod") != 120
                 or hpa.get("spec", {}).get("minReplicas", 1) != replicas
-                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or hpa.get("spec", {}).get("maxReplicas") != 20
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError(f"ScaledObject/HPA E1 không đúng owner hoặc cấu hình min={replicas}, max=10, queueLength=10")
+            raise ValueError(f"ScaledObject/HPA E1 không đúng owner hoặc cấu hình min={replicas}, max=20, queueLength=10")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E1 chưa Ready")

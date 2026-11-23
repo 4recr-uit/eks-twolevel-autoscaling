@@ -1,5 +1,5 @@
-# Tạm giữ chỗ cho tối đa 10 worker với requests tương đương Orders.
-# Xóa Deployment sau khi tất cả pod Ready; NodePool E5 không consolidate.
+# Tạm giữ chỗ tương đương 10 worker với requests tương đương Orders.
+# Trước khi xóa Deployment, bảo vệ các node cần giữ bằng annotation karpenter.sh/do-not-disrupt=true.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
