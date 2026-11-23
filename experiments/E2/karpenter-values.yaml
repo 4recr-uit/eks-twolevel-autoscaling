@@ -3,11 +3,6 @@
 nodePool:
   enabled: true
   name: e2-orders
-  instanceTypes: [c7i-flex.large]
-  capacityTypes: [on-demand]
-  cpuLimit: "12"
-  memoryLimit: 24Gi
-  consolidateAfter: 1m
 kedaAuthentication:
   enabled: false
 monitoring: false
