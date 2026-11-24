@@ -194,9 +194,9 @@ def summarize(directory, after=60, before=60):
     first_scale, first_high_scale = None, None
     if len(desired) == 1:
         values = sorted((float(t), float(v)) for t, v in desired[0].get("values", []))
-        initial = [v for t, v in values if t <= start]
-        if initial:
-            first = next((t for t, v in values if start <= t <= end and v > initial[-1]), None)
+        pre_load_desired = [v for t, v in values if t <= start]
+        if pre_load_desired:
+            first = next((t for t, v in values if start <= t <= end and v > pre_load_desired[-1]), None)
             if first is not None:
                 first_scale = round(first - start, 1)
         first_high_scale = first_scale_after_high(values, start, end, metadata.get("profile"), version)
@@ -220,11 +220,12 @@ def summarize(directory, after=60, before=60):
     elif len({tuple(sorted(nodes)) for nodes in node_points.values()}) > 1:
         warnings.append("node_set_changed_in_window")
     topology_path = directory / "events/collect-topology-samples.jsonl"
+    node_pool = initial.get("node_pool", "e5-orders")
     node_minutes = None
     if topology_path.exists():
         topology = [json.loads(line) for line in topology_path.read_text(encoding="utf-8").splitlines() if line.strip()]
         points = sorted((timestamp(x["observed_at_utc"]),
-                         sum(n.get("labels", {}).get("karpenter.sh/nodepool") == "e5-orders"
+                         sum(n.get("labels", {}).get("karpenter.sh/nodepool") == node_pool
                              for n in x["data"].get("nodes", []))) for x in topology)
         if points:
             node_minutes = replica_minutes([{"values": points}], start - before, end,
@@ -253,7 +254,7 @@ def summarize(directory, after=60, before=60):
         "drain_confirmation_seconds_approx": drain,
         "ready_pod_minutes_approx": ready_minutes,
         "worker_node_minutes_approx": node_minutes,
-        "worker_node_scope": "e5-orders; workload start - before to workload end + after; Kubernetes node presence, not EC2 billed duration",
+        "worker_node_scope": f"{node_pool}; workload start - before to workload end + after; Kubernetes node presence, not EC2 billed duration",
         "mean_worker_cpu_millicores_approx": round(sum(cpu_deltas) / (end - start) * 1000, 1) if cpu_deltas else None,
         "first_scale_out_after_start_seconds_approx": first_scale,
         "first_scale_out_after_high_seconds_approx": first_high_scale,

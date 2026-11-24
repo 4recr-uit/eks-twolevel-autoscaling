@@ -59,6 +59,9 @@ export function sendJob() {
   try { body = response.json(); } catch (_) { body = {}; }
   const accepted = Array.isArray(body.jobIds) ? body.jobIds.length : 0;
   acceptedJobs.add(accepted);
+  if (__ENV.LOG_JOB_IDS === '1' && accepted) {
+    console.log(JSON.stringify({ accepted_job_ids: body.jobIds }));
+  }
   const complete = response.status === 200 && body.status === 'published' && accepted === batchSize;
   failedRequests.add(!complete);
   check(response, { 'tất cả job được chấp nhận': () => complete });
