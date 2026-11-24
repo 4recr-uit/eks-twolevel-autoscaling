@@ -6,17 +6,23 @@
 
 ## Thiết kế
 
-So sánh ba mức queue target: **5**, **10** và **20 message/worker**. Các nhánh dùng cùng workload, cấu hình worker, node capacity và giới hạn 1–10 worker.
+So sánh ba mức queue target: **5**, **10** và **20 message/worker**. Các nhánh dùng cùng workload, cấu hình worker, node capacity và giới hạn 0–20 worker.
 
 Các chỉ số chính gồm số worker, peak backlog, thời gian queue drain, p95 latency, throughput và Pod-phút.
 
+Mỗi lượt bắt đầu với 0 worker và queue rỗng; xác minh Prometheus thu được metric worker sau khi workload kích hoạt Pod.
+
 ## Cấu hình và workload
 
-- KEDA có polling 30 giây, cooldown 300 giây; worker yêu cầu 500m CPU và 256Mi memory. NodePool `e4-orders` dùng On-Demand và giữ node với `consolidateAfter: Never`.
+- KEDA có polling 10 giây, cooldown 120 giây; worker yêu cầu 500m CPU và 256Mi memory. NodePool `e4-orders` kế thừa cấu hình dev, gồm `consolidateAfter: 1m`.
 - Workload đã thực hiện là Step 5 → 10 → 15 → 20 → 15 → 10 → 5 request/s, mỗi bậc 1 phút.
-- Với `minReplicaCount=1`, không có `idleReplicaCount` hoặc cached metrics, polling/cooldown không điều khiển scale thông thường; HPA dùng metric KEDA để scale. CPU request khác E0 nên throughput có thể thay đổi.
+- Với `minReplicaCount=0`, polling và cooldown ảnh hưởng kích hoạt và scale về 0; HPA điều khiển scale khi worker đang hoạt động. CPU request khác E0 nên throughput có thể thay đổi.
+
+Để giữ warm capacity khi cần, sau khi các Pod giữ chỗ Ready hãy gắn `karpenter.sh/do-not-disrupt=true` cho từng node cần giữ trước khi xóa Deployment giữ chỗ; gỡ annotation sau lượt. Ghi số node và capacity thực tế vì loại instance có thể khác nhau.
 
 ## Kết quả
+
+Các lượt đo dùng min 1/max 10, polling 30 giây, cooldown 300 giây và consolidation `Never`.
 
 ### Step v4 — một lượt mỗi mức
 

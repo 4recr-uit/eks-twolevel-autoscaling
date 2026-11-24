@@ -8,7 +8,7 @@
 | **E0** | Nền tảng: Worker Capacity Calibration + Workload Modeling | Đo μ (số task/s mà 1 worker xử lý ổn định) và định nghĩa workload Steady/Step/Burst theo μ, làm cơ sở cho các kịch bản sau. |
 | **E1** | Warm Capacity vs Elastic Capacity (Node) | So sánh Warm/Elastic và khảo sát số worker tối thiểu 1/3/5 với KEDA + Karpenter. |
 | **E2** | KEDA + Karpenter Two-Level Elasticity | Đo đường từ spike, backlog và Pod Pending đến Karpenter provision node, Pod Ready và throughput phục hồi; phân tích độ trễ từng giai đoạn. |
-| **E3** | CPU-HPA vs KEDA trên Karpenter | So sánh hai bộ điều khiển trên cùng workload, bắt đầu với một node worker được giữ sẵn và capacity trống tương đương. |
+| **E3** | CPU-HPA vs KEDA trên Karpenter | So sánh hai bộ điều khiển trên cùng workload, bắt đầu với các node worker được giữ sẵn và điều kiện tương đương. |
 | **E4** | Queue Target Sensitivity | Thay đổi `queueLength` của KEDA (thấp/vừa/cao) trên một workload đại diện, đo ảnh hưởng đến backlog, latency và số Pod. |
 | **E5** | Chaos Engineering | Làm gián đoạn worker và quan sát phục hồi, queue, duplicate và throughput. |
 
@@ -63,7 +63,7 @@
 | Mục | Nội dung |
 |---|---|
 | **Câu hỏi** | HPA theo CPU và KEDA theo queue khác nhau thế nào về phản ứng, hiệu năng và tài nguyên? |
-| **Thiết kế** | So sánh hai controller trên cùng workload; mỗi lượt bắt đầu với một worker và một node worker Ready, giữ các điều kiện còn lại tương đương. |
+| **Thiết kế** | So sánh hai controller trên cùng workload; mỗi lượt bắt đầu với một worker và 4 node worker Ready, giữ các điều kiện còn lại tương đương. |
 | **Đo gì** | Số worker/node, backlog, thời gian drain, throughput, p95/p99 latency và tài nguyên sử dụng. |
 | **Dựa vào** | Workload E0 và Karpenter để mở rộng node khi cần. Xem [E3](E3/README.md). |
 

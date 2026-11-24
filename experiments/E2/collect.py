@@ -225,16 +225,16 @@ def preflight(source, variant):
         trigger = triggers[0] if len(triggers) == 1 else {}
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e2"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != 0 or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval") != 5
-                or spec.get("cooldownPeriod") != 150
+                or spec.get("minReplicaCount") != 0 or spec.get("maxReplicaCount") != 20
+                or spec.get("pollingInterval") != 10
+                or spec.get("cooldownPeriod") != 120
                 or hpa.get("spec", {}).get("minReplicas", 1) != 1
-                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or hpa.get("spec", {}).get("maxReplicas") != 20
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E2 không đúng owner hoặc cấu hình min=0, max=10, queueLength=10, polling=5s, cooldown=150s")
+            raise ValueError("ScaledObject/HPA E2 không đúng owner hoặc cấu hình min=0, max=20, queueLength=10, polling=10s, cooldown=120s")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E2 chưa Ready")

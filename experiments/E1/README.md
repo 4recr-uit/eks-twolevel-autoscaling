@@ -4,28 +4,30 @@ E1 khảo sát hai yếu tố: **node capacity** có sẵn và **số worker t�
 
 | Cấu hình | KEDA min | KEDA max | Kết quả hiện có |
 |---|---:|---:|---|
-| Config 1 — `keda-config1.yaml` | 1 | 10 | Đã chạy Warm/Elastic với Step/Burst; xem bên dưới |
-| Config 2 — `keda-config2.yaml` | 3 | 10 | Đã chạy Warm/Elastic với Burst |
-| Config 3 — `keda-config3.yaml` | 5 | 10 | Đã chạy Warm/Elastic với Burst |
+| Config 1 — `keda-config1.yaml` | 1 | 20 | Đã chạy Warm/Elastic với Step/Burst; xem bên dưới |
+| Config 2 — `keda-config2.yaml` | 3 | 20 | Đã chạy Warm/Elastic với Burst |
+| Config 3 — `keda-config3.yaml` | 5 | 20 | Đã chạy Warm/Elastic với Burst |
 
-Mỗi config có hai nhánh: **Warm** chuẩn bị 4 node E1 Ready; **Elastic** không giữ node E1 rảnh không có worker. Bắt đầu khi tất cả worker tối thiểu đã Ready. Elastic Config 3 có thể cần từ 2 node; xác định từ requests, allocatable và Pod thực tế, không giả định 5 worker sẽ vừa 1 node. Ghi số node và phân bố worker vì có thể còn capacity trống trên các node đang chạy worker. Giữ workload, worker, queue và thông số autoscaler khác giống nhau. Lượt min=1 cũ giữ nguyên tên và được xem là Config 1.
+Mỗi config có hai nhánh: **Warm** chuẩn bị capacity E1 Ready (10 Pod giữ chỗ; số node tùy loại instance); **Elastic** không giữ node E1 rảnh không có worker. Bắt đầu khi tất cả worker tối thiểu đã Ready. Xác định số node từ requests, allocatable và Pod thực tế; kiểm tra capacity trống ở nhánh Warm trước mỗi lượt. Ghi số node và phân bố worker vì có thể còn capacity trống trên các node đang chạy worker. Giữ workload, worker, queue và thông số autoscaler khác giống nhau. Lượt min=1 cũ giữ nguyên tên và được xem là Config 1.
 
 ## Cấu hình và workload
 
 
 | File | Vai trò |
 |---|---|
-| `karpenter-values.yaml` | NodePool/NodeClass `e1-orders`, On-Demand, `c7i-flex.large`, consolidation `Never` |
-| `autoscaled-values.yaml`, `keda-config1.yaml`, `keda-config2.yaml`, `keda-config3.yaml` | Worker chọn NodePool E1; KEDA SQS min lần lượt 1/3/5, max 10, queueLength 10, polling 30s, cooldown 300s |
+| `karpenter-values.yaml` | NodePool/NodeClass `e1-orders`, kế thừa instance và giới hạn từ cấu hình dev, consolidation `Never` để giữ warm capacity |
+| `autoscaled-values.yaml`, `keda-config1.yaml`, `keda-config2.yaml`, `keda-config3.yaml` | Worker chọn NodePool E1; KEDA SQS min lần lượt 1/3/5, max 20, queueLength 10, polling 10s, cooldown 120s |
 | `warm-capacity.yaml` | 10 Pod tạm giữ chỗ để chuẩn bị warm; requests 500m/256Mi khớp overlay worker E1 |
 | `step.js`, `burst.js`, `workload-common.js` | workload E0 tại chỗ: Step 5→10→15→20→15→10→5/s, mỗi bậc 1 phút; Burst 5/s 1 phút → 40/s 30 giây → 5/s 1 phút |
 | `run.py`, `run.sh` | Tạo hồ sơ/kiểm tra target và các lệnh tắt; `run.sh` không apply hoặc xóa tài nguyên |
 | `collect.py` | Thu SQS, Prometheus, Pod, Node/NodeClaim/event, gồm histogram queue wait và thời gian xử lý |
 | `report.py`, `compare.py` | Tóm tắt một lượt và so sánh các report cùng workload/cửa sổ |
 
-Các giá trị trên là **cấu hình trong repo**; kiểm tra cấu hình thực tế trên cluster trước mỗi lượt. E1 đặt CPU request worker thành **500m** thay cho mức 128m đã dùng trong E0, nhằm làm rõ giới hạn scheduling trên node 2 vCPU; cả hai nhánh đều dùng cùng request này. Thay đổi request có thể ảnh hưởng chia sẻ CPU, nên cần pilot lại throughput trước khi dùng ước lượng μ từ E0. Cấu hình vẫn không bảo đảm workload sẽ tạo Pending: phải kiểm chứng bằng dữ liệu. Hai nhánh phải cùng image/digest, requests/limits, concurrency, queue, KEDA, loại node và workload; ghi cả khác biệt không kiểm soát. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet, AMI, IP và chi phí; warm có thể tạo nhiều node, và `Never` giữ node sau khi hết tải.
+Các giá trị trên là **cấu hình trong repo**; kiểm tra cấu hình thực tế trên cluster trước mỗi lượt. E1 đặt CPU request worker thành **500m** thay cho mức 128m đã dùng trong E0, nhằm làm rõ giới hạn scheduling trên node; cả hai nhánh đều dùng cùng request này. Thay đổi request có thể ảnh hưởng chia sẻ CPU, nên cần pilot lại throughput trước khi dùng ước lượng μ từ E0. Cấu hình vẫn không bảo đảm workload sẽ tạo Pending: phải kiểm chứng bằng dữ liệu. Hai nhánh phải cùng image/digest, requests/limits, concurrency, queue, KEDA, loại node và workload; ghi cả khác biệt không kiểm soát. KEDA/Karpenter, API và monitoring cần node hệ thống độc lập. Kiểm tra quota, IAM, subnet, AMI, IP và chi phí; warm có thể tạo nhiều node, và `Never` giữ node sau khi hết tải.
 
 ## Kết quả E1
+
+Các lượt đo dùng max 10, polling 30 giây, cooldown 300 giây và instance `c7i-flex.large`.
 
 
 ### Config 1 — min 1 worker

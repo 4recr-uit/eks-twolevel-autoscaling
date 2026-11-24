@@ -1,5 +1,4 @@
-# Tạm giữ chỗ cho một worker với requests tương đương Orders.
-# Xóa Deployment sau khi tất cả pod Ready; NodePool E3 không consolidate.
+# Bốn Pod tạm, mỗi Pod trên một node E3; xóa sau khi tất cả Ready.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -8,7 +7,7 @@ metadata:
   labels:
     experiments.retailstore.dev/owner: e3
 spec:
-  replicas: 1
+  replicas: 4
   selector:
     matchLabels:
       app: e3-warm-capacity
@@ -17,6 +16,13 @@ spec:
       labels:
         app: e3-warm-capacity
     spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  app: e3-warm-capacity
+              topologyKey: kubernetes.io/hostname
       nodeSelector:
         karpenter.sh/nodepool: e3-orders
       containers:

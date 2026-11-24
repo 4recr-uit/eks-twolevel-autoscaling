@@ -12,6 +12,8 @@ Tải đến → cold start Pod trên node sẵn → scale-out Pod
 
 Node ban đầu có annotation `karpenter.sh/do-not-disrupt=true` nên không bị consolidation tự nguyện thu hồi; các node E2 khác vẫn có thể được thu hồi. Annotation không ngăn mọi nguyên nhân mất node. Không mặc định sẽ có Pod thiếu capacity hoặc node mới: nếu không quan sát thấy, ghi `N/A` cho các mốc tương ứng.
 
+Cấu hình hiện tại: KEDA min 0/max 20, queueLength 10, polling 10 giây, cooldown 120 giây; NodePool kế thừa cấu hình dev.
+
 ## Thiết kế đo và timeline
 
 Thu ít nhất 75 giây baseline không phát tải. T0 là lúc bắt đầu phát workload của lượt đo; gauge bắt đầu hiện tại được ghi trong k6 `setup`, nên có thể lệch so với request đầu tiên. Ghi timestamp UTC, nguồn và độ phân giải cho từng mốc; khi đo provisioning, đối chiếu Pod UID, scheduler event, NodeClaim, provider ID và node tương ứng.

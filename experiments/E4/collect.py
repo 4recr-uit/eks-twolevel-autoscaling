@@ -194,7 +194,7 @@ def preflight(source, variant):
         raise ValueError("Variant E4 phải là q-low, q-medium hoặc q-high")
     controller_variant = "keda"
     worker = source.worker()
-    replicas = 1
+    replicas = 0
     if worker["desired"] != replicas or worker["ready"] != replicas:
         raise ValueError(f"E4 {variant} cần {replicas} worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
@@ -216,20 +216,20 @@ def preflight(source, variant):
         trigger = triggers[0] if len(triggers) == 1 else {}
         if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e4"
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval", 30) != 30
-                or spec.get("cooldownPeriod", 300) != 300
+                or spec.get("minReplicaCount") != 0 or spec.get("maxReplicaCount") != 20
+                or spec.get("pollingInterval") != 10
+                or spec.get("cooldownPeriod") != 120
                 or hpa.get("spec", {}).get("minReplicas", 1) != 1
-                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or hpa.get("spec", {}).get("maxReplicas") != 20
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != {"q-low": "5", "q-medium": "10", "q-high": "20"}[variant]
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E4 không đúng owner hoặc cấu hình min=1, max=10, queueLength của nhánh")
+            raise ValueError("ScaledObject/HPA E4 không đúng owner hoặc cấu hình min=0, max=20, queueLength của nhánh")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E4 chưa Ready")
-    if controller_variant == "keda":
+    if controller_variant == "keda" and replicas:
         conditions = hpa.get("status", {}).get("conditions", [])
         if not all(any(c.get("type") == name and c.get("status") == "True" for c in conditions)
                    for name in ("AbleToScale", "ScalingActive")):
@@ -259,7 +259,7 @@ def preflight(source, variant):
             raise ValueError("DLQ chưa rỗng; đối chiếu trước lượt mới")
     up = source.prom("query", query=queries(source.target)["worker_target_up"])
     values = up.get("data", {}).get("result", [])
-    if len(values) < replicas or any(float(item["value"][1]) != 1 for item in values):
+    if replicas and (len(values) < replicas or any(float(item["value"][1]) != 1 for item in values)):
         raise ValueError("Prometheus chưa có đủ target worker UP")
     return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": source.nodes(),
             "queue": queue, "dlq": dlq, "controllers": controllers}

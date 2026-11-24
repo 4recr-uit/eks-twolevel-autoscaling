@@ -187,49 +187,53 @@ def queries(target):
 
 
 def preflight(source, variant):
-    expected = {
-        "keda": {"hpa/e5-orders-keda-hpa", "scaledobjects.keda.sh/e5-orders-sqs"},
-    }
     if variant not in ("baseline", "fault"):
         raise ValueError("Variant E5 phải là baseline hoặc fault")
     controller_variant = "keda"
     worker = source.worker()
-    replicas = 1
+    replicas = 0
     if worker["desired"] != replicas or worker["ready"] != replicas:
         raise ValueError(f"E5 {variant} cần {replicas} worker desired/Ready trước lượt")
     if len(worker["pods"]) != replicas or any(
             not p["containers"] or any(not c["ready"] or not c["imageID"] for c in p["containers"])
             for p in worker["pods"]):
         raise ValueError("Chờ worker Ready và có image digest trước khi thu")
-    if worker.get("node_selector", {}).get("karpenter.sh/nodepool") != "e5-orders":
-        raise ValueError("Worker chưa chọn NodePool e5-orders")
     controllers = source.controllers()
-    if set(controllers) != expected[controller_variant]:
+    default_stack = "scaledobjects.keda.sh/orders-worker-sqs" in controllers
+    pool = "default" if default_stack else "e5-orders"
+    scaled_name = "orders-worker-sqs" if default_stack else "e5-orders-sqs"
+    hpa_name = "keda-hpa-orders-worker-sqs" if default_stack else "e5-orders-keda-hpa"
+    selected_pool = worker.get("node_selector", {}).get("karpenter.sh/nodepool")
+    if selected_pool != pool and not (default_stack and selected_pool is None):
+        raise ValueError(f"NodePool của worker không khớp cấu hình {pool}")
+    if set(controllers) != {f"hpa/{hpa_name}", f"scaledobjects.keda.sh/{scaled_name}"}:
         raise ValueError(f"Autoscaler không khớp nhánh {variant}: {controllers}")
     ns = source.target["namespace"]
     if controller_variant == "keda":
-        scaled = source.kube("-n", ns, "get", "scaledobject", "e5-orders-sqs")
-        hpa = source.kube("-n", ns, "get", "hpa", "e5-orders-keda-hpa")
+        scaled = source.kube("-n", ns, "get", "scaledobject", scaled_name)
+        hpa = source.kube("-n", ns, "get", "hpa", hpa_name)
         owners = hpa["metadata"].get("ownerReferences", [])
         spec = scaled["spec"]
         triggers = spec.get("triggers", [])
         trigger = triggers[0] if len(triggers) == 1 else {}
-        if (scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") != "e5"
+        valid_owner = (scaled["metadata"].get("annotations", {}).get("meta.helm.sh/release-name") == "worker-scaling"
+                       if default_stack else scaled["metadata"].get("labels", {}).get("experiments.retailstore.dev/owner") == "e5")
+        if (not valid_owner
                 or not any(o.get("uid") == scaled["metadata"]["uid"] and o.get("kind") == "ScaledObject" for o in owners)
-                or spec.get("minReplicaCount") != 1 or spec.get("maxReplicaCount") != 10
-                or spec.get("pollingInterval", 30) != 30
-                or spec.get("cooldownPeriod", 300) != 300
+                or spec.get("minReplicaCount") != 0 or spec.get("maxReplicaCount") != 20
+                or spec.get("pollingInterval") != 10
+                or spec.get("cooldownPeriod") != 120
                 or hpa.get("spec", {}).get("minReplicas", 1) != 1
-                or hpa.get("spec", {}).get("maxReplicas") != 10
+                or hpa.get("spec", {}).get("maxReplicas") != 20
                 or trigger.get("type") != "aws-sqs-queue"
                 or str(trigger.get("metadata", {}).get("queueLength")) != "10"
                 or str(trigger.get("metadata", {}).get("scaleOnInFlight", "true")).lower() != "true"
                 or str(trigger.get("metadata", {}).get("scaleOnDelayed", "false")).lower() != "false"):
-            raise ValueError("ScaledObject/HPA E5 không đúng owner hoặc cấu hình min=1, max=10, queueLength=10")
+            raise ValueError("ScaledObject/HPA E5 không đúng owner hoặc cấu hình min=0, max=20, queueLength=10")
         if not any(c.get("type") == "Ready" and c.get("status") == "True"
                    for c in scaled.get("status", {}).get("conditions", [])):
             raise ValueError("ScaledObject E5 chưa Ready")
-    if controller_variant == "keda":
+    if controller_variant == "keda" and replicas:
         conditions = hpa.get("status", {}).get("conditions", [])
         if not all(any(c.get("type") == name and c.get("status") == "True" for c in conditions)
                    for name in ("AbleToScale", "ScalingActive")):
@@ -245,10 +249,13 @@ def preflight(source, variant):
     env = {e["name"]: e.get("value") for e in worker_containers[0].get("env", [])}
     if env.get("SQS_QUEUE_URL") != source.queue_urls[source.target["queue_name"]]:
         raise ValueError("SQS_QUEUE_URL của worker không khớp queue đang thu")
-    if controller_variant == "keda" and (trigger.get("metadata", {}).get("queueURLFromEnv") != "SQS_QUEUE_URL"
-                              or trigger.get("metadata", {}).get("queueURL")
-                              or trigger.get("metadata", {}).get("awsRegion") != source.target["aws_region"]):
-        raise ValueError("KEDA không dùng SQS_QUEUE_URL/region của worker")
+    trigger_config = trigger.get("metadata", {})
+    if default_stack:
+        queue_matches = trigger_config.get("queueURL") == env["SQS_QUEUE_URL"] and not trigger_config.get("queueURLFromEnv")
+    else:
+        queue_matches = trigger_config.get("queueURLFromEnv") == "SQS_QUEUE_URL" and not trigger_config.get("queueURL")
+    if not queue_matches or trigger_config.get("awsRegion") != source.target["aws_region"]:
+        raise ValueError("KEDA không dùng cùng queue/region với worker")
     if any(queue["counts"].values()):
         raise ValueError(f"Queue chưa rỗng: {queue['counts']}")
     dlq = None
@@ -259,10 +266,10 @@ def preflight(source, variant):
             raise ValueError("DLQ chưa rỗng; đối chiếu trước lượt mới")
     up = source.prom("query", query=queries(source.target)["worker_target_up"])
     values = up.get("data", {}).get("result", [])
-    if len(values) < replicas or any(float(item["value"][1]) != 1 for item in values):
+    if replicas and (len(values) < replicas or any(float(item["value"][1]) != 1 for item in values)):
         raise ValueError("Prometheus chưa có đủ target worker UP")
     return {"observed_at_utc": utc_now(), "variant": variant, "worker": worker, "nodes": source.nodes(),
-            "queue": queue, "dlq": dlq, "controllers": controllers}
+            "queue": queue, "dlq": dlq, "controllers": controllers, "node_pool": pool}
 
 
 def matrix_stats(data):
@@ -283,6 +290,7 @@ class Collector:
         self.exports = {}
         self.started = None
         self.before = None
+        self.image_ids = {}
 
     def error(self, source, exc):
         item = {"observed_at_utc": utc_now(), "source": source, "error": str(exc)[:1000]}
@@ -295,10 +303,10 @@ class Collector:
             original = self.before["worker"]
             if worker["uid"] != original["uid"] or worker["containers"] != original["containers"]:
                 self.warnings.add("worker_configuration_changed")
-            baseline_ids = {c.get("imageID") for p in original["pods"] for c in p["containers"]}
             for pod in worker["pods"]:
                 for container in pod["containers"]:
-                    if container.get("imageID") and container["imageID"] not in baseline_ids:
+                    digest = container.get("imageID")
+                    if digest and self.image_ids.setdefault(container["name"], digest) != digest:
                         self.warnings.add("worker_image_changed")
                     if container.get("restartCount", 0):
                         self.warnings.add("worker_restarted")
